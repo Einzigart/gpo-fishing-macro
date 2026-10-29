@@ -1,0 +1,17 @@
+opencv-python==4.8.1.78; python_version < "3.13"
+numpy==1.26.4; python_version < "3.13"
+mss==9.0.2
+pynput==1.7.7
+customtkinter==5.2.2
+pyobjc-core==10.3.2; python_version < "3.13"
+pyobjc-framework-Quartz==10.3.2; python_version < "3.13"
+pyobjc-framework-Cocoa==10.3.2; python_version < "3.13"
+pyobjc-framework-ApplicationServices==10.3.2; python_version < "3.13"
+pyobjc-framework-Vision==10.3.2; python_version < "3.13"
+opencv-python>=4.10.0.84,<5; python_version >= "3.13"
+numpy>=2.1; python_version >= "3.13"
+pyobjc-core>=10.3.2; python_version >= "3.13"
+pyobjc-framework-Quartz>=10.3.2; python_version >= "3.13"
+pyobjc-framework-Cocoa>=10.3.2; python_version >= "3.13"
+pyobjc-framework-ApplicationServices>=10.3.2; python_version >= "3.13"
+pyobjc-framework-Vision>=10.3.2; python_version >= "3.13"
