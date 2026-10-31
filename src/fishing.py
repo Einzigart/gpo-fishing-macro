@@ -6,8 +6,8 @@ The loop runs on a worker thread and talks to the UI only through `Hooks`.
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
 import cv2
 import mss
@@ -22,8 +22,6 @@ from point_selector import FracPoint
 from roblox_geo import PixelRect, resolve_origin, roblox_client_rect
 from screen_text import (
     DISCONNECT_AREA,
-    row_bait,
-    row_selected,
     SHOP_AREA,
     area_rect,
     disconnected_text,
@@ -31,6 +29,8 @@ from screen_text import (
     item_rect,
     read_count,
     read_item,
+    row_bait,
+    row_selected,
     shop_max,
     strip_rect,
     text_boxes,
@@ -580,7 +580,7 @@ class Fisher:
         baits = self.cfg["baits"]
         for _ in range(len(baits) + 1):
             start = self.cfg["bait_index"]
-            order = list(range(start, len(baits))) + list(range(0, start))
+            order = list(range(start, len(baits))) + list(range(start))
             i = next((j for j in order if _has_stock(baits[j])), None)
             if i is None:
                 break
@@ -677,7 +677,7 @@ class Fisher:
         """
         adv = self.adv
         budget = 1.0 / max(5.0, adv["task_fps"])
-        confirm = max(1, int(round(adv["start_confirm_frames"])))
+        confirm = max(1, round(adv["start_confirm_frames"]))
         deadline = time.perf_counter() + adv["wait_bite_sec"]
         started = False
         hits = 0

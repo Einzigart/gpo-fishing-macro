@@ -22,8 +22,8 @@ def sh(args):
         p = subprocess.Popen(args, stdout=subprocess.PIPE,
                              stderr=subprocess.STDOUT)
         return p.communicate()[0].decode("utf-8", "replace").strip()
-    except Exception as exc:
-        return "(failed: %s)" % exc
+    except Exception as exc:  # noqa: BLE001 -- a diagnostic report keeps going and shows the failure
+        return f"(failed: {exc})"
 
 
 def section(title):
@@ -61,12 +61,12 @@ def main():
     out("=" * 28)
 
     section("System")
-    out("macOS            : %s" % platform.mac_ver()[0])
-    out("sw_vers          : %s" % sh(["sw_vers", "-productVersion"]))
-    out("build            : %s" % sh(["sw_vers", "-buildVersion"]))
-    out("arch (uname -m)  : %s" % sh(["uname", "-m"]))
-    out("arch (python)    : %s" % platform.machine())
-    out("running under    : %s" % sys.executable)
+    out(f"macOS            : {platform.mac_ver()[0]}")
+    out("sw_vers          : {}".format(sh(["sw_vers", "-productVersion"])))
+    out("build            : {}".format(sh(["sw_vers", "-buildVersion"])))
+    out("arch (uname -m)  : {}".format(sh(["uname", "-m"])))
+    out(f"arch (python)    : {platform.machine()}")
+    out(f"running under    : {sys.executable}")
 
     ver = platform.mac_ver()[0].split(".")
     try:
@@ -78,9 +78,9 @@ def main():
         out("!! This Mac is older than macOS 11. This build targets 11+.")
 
     section("Folder")
-    out("location         : %s" % ROOT)
+    out(f"location         : {ROOT}")
     q = sh(["xattr", "-l", os.path.join(ROOT, "Launch.command")])
-    out("Launch.command   : %s" % ("quarantined -- %s" % q if "quarantine" in q
+    out("Launch.command   : %s" % (f"quarantined -- {q}" if "quarantine" in q
                                    else "not quarantined"))
 
     section("Pythons on this Mac")
@@ -90,7 +90,7 @@ def main():
     usable = []
     for path, real in cands:
         info = probe(path)
-        out("%-58s %s" % (path, info))
+        out(f"{path:<58} {info}")
         parts = info.split(".")
         try:
             if (3, 10) <= (int(parts[0]), int(parts[1])) < (3, 15) and \
@@ -106,14 +106,14 @@ def main():
     if not os.path.exists(VENV_PY):
         out(".venv not built yet (run Setup.command)")
     else:
-        out("python           : %s" % sh([VENV_PY, "-V"]))
+        out("python           : {}".format(sh([VENV_PY, "-V"])))
         out("")
         for mod in NEEDED:
             r = sh([VENV_PY, "-c",
-                    "import %s as m; print(getattr(m,'__version__','ok'))" % mod])
+                    f"import {mod} as m; print(getattr(m,'__version__','ok'))"])
             first = r.splitlines()[-1] if r else "(no output)"
             ok = "ok" if "Error" not in r and "Traceback" not in r else "FAILED"
-            out("  %-20s %-8s %s" % (mod, ok, first if ok == "ok" else r[:400]))
+            out(f"  {mod:<20} {ok:<8} {first if ok == 'ok' else r[:400]}")
 
     section("Permissions")
     if os.path.exists(VENV_PY):

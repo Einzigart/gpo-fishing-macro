@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import threading
-from typing import Callable
+from collections.abc import Callable
 
 from pynput import keyboard as _pk
 from Quartz import CGEventCreateKeyboardEvent, CGEventPost, kCGHIDEventTap

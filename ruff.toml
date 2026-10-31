@@ -1,0 +1,2 @@
+# The code is written to 120 columns; ruff otherwise wraps imports at 88.
+line-length = 120

@@ -27,7 +27,7 @@ _TITLE_HINTS = ("roblox",)
 
 
 class WindowRect:
-    __slots__ = ("x", "y", "w", "h")
+    __slots__ = ("h", "w", "x", "y")
 
     def __init__(self, x: int, y: int, w: int, h: int) -> None:
         self.x, self.y, self.w, self.h = int(x), int(y), int(w), int(h)
@@ -112,9 +112,9 @@ def roblox_window_rect() -> WindowRect | None:
 def _active_app_pid() -> int | None:
     try:
         asn = subprocess.run(["lsappinfo", "front"], capture_output=True,
-                             text=True, timeout=2).stdout.strip()
+                             text=True, timeout=2, check=False).stdout.strip()
         out = subprocess.run(["lsappinfo", "info", "-only", "pid", asn],
-                             capture_output=True, text=True, timeout=2).stdout
+                             capture_output=True, text=True, timeout=2, check=False).stdout
         return int(out.strip().rsplit("=", 1)[-1])
     except (OSError, ValueError, subprocess.TimeoutExpired):
         return None

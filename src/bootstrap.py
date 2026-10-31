@@ -59,11 +59,11 @@ def explain_failure():
     v = sys.version_info
     say("")
     say("Install failed. The full output is in setup-log.txt next to Launch.command.")
-    say("Python %d.%d.%d at %s on macOS %s (%s)" % (
-        v.major, v.minor, v.micro, sys.executable, platform.mac_ver()[0], platform.machine()))
+    say(f"Python {v.major}.{v.minor}.{v.micro} at {sys.executable} on macOS {platform.mac_ver()[0]}"
+        f" ({platform.machine()})")
     say("")
     if v >= (3, 13):
-        say("* This is Python %d.%d. Older Macs (macOS 11 on Intel especially) have" % v[:2])
+        say(f"* This is Python {v.major}.{v.minor}. Older Macs (macOS 11 on Intel especially) have")
         say("  no package builds for 3.13+. Install Python 3.12 from")
         say("      https://www.python.org/downloads/release/python-3128/")
         say("  delete the .venv folder, and run Setup.command again; it prefers 3.12.")
@@ -117,14 +117,14 @@ def install_packages():
 
 def platform_notes():
     ver = platform.mac_ver()[0]
-    say("macOS %s detected." % ver)
+    say(f"macOS {ver} detected.")
     say("")
     say("The first run asks for three permissions, and they are granted to")
     say("Terminal, not to the macro:")
     say("    Accessibility, Input Monitoring, Screen Recording")
     say("")
     if ver.split(".")[0] in ("11", "12"):
-        say("On macOS %s they are under:" % ver.split(".")[0])
+        say("On macOS {} they are under:".format(ver.split(".")[0]))
         say("    System Preferences > Security & Privacy > Privacy")
         say("Click the padlock at the bottom left to unlock it first.")
     else:

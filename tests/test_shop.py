@@ -8,9 +8,9 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-import config  # noqa: E402
-import fishing  # noqa: E402
-import screen_text  # noqa: E402
+import config
+import fishing
+import screen_text
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
@@ -181,15 +181,14 @@ class BuyFlowTests(unittest.TestCase):
     def test_failed_buy_goes_anti_afk(self):
         f = make([1, 1])
         with mock.patch.object(f, "_buy_common", return_value="the 'How many' step did not show"), \
-                mock.patch.object(fishing, "read_bait_count", return_value=(1, "x1")):
-            with self.assertRaises(fishing.OutOfBait):
-                f._next_bait(select=False)
+                mock.patch.object(fishing, "read_bait_count", return_value=(1, "x1")), \
+                self.assertRaises(fishing.OutOfBait):
+            f._next_bait(select=False)
 
     def test_auto_buy_off_goes_anti_afk(self):
         f = make([1, 1], auto_buy=False)
-        with mock.patch.object(f, "_buy_common") as buy:
-            with self.assertRaises(fishing.OutOfBait):
-                f._next_bait(select=False)
+        with mock.patch.object(f, "_buy_common") as buy, self.assertRaises(fishing.OutOfBait):
+            f._next_bait(select=False)
         buy.assert_not_called()
 
 
@@ -200,15 +199,17 @@ def dialog_image(lines) -> np.ndarray:
     return img
 
 
+PANEL_NAMES = ["Rare Fish Bait", "Common Fish Bait", "Legendary Fish Bait"]
+
+
 class RowCheckTests(unittest.TestCase):
-    NAMES = ["Rare Fish Bait", "Common Fish Bait", "Legendary Fish Bait"]
 
     def test_row_names_from_real_reads(self):
         # Reads from the user's three-row panel (2026-10-26).
-        self.assertEqual(screen_text.row_bait("Legendary FishTait | X33", self.NAMES), "Legendary Fish Bait")
-        self.assertEqual(screen_text.row_bait("Rare Fish Bait | X22", self.NAMES), "Rare Fish Bait")
-        self.assertEqual(screen_text.row_bait("Common Fish Bait x300", self.NAMES), "Common Fish Bait")
-        self.assertIsNone(screen_text.row_bait("×30", self.NAMES))
+        self.assertEqual(screen_text.row_bait("Legendary FishTait | X33", PANEL_NAMES), "Legendary Fish Bait")
+        self.assertEqual(screen_text.row_bait("Rare Fish Bait | X22", PANEL_NAMES), "Rare Fish Bait")
+        self.assertEqual(screen_text.row_bait("Common Fish Bait x300", PANEL_NAMES), "Common Fish Bait")
+        self.assertIsNone(screen_text.row_bait("×30", PANEL_NAMES))
 
     def _rows(self, by_row):
         ys = {fishing.row_spot(k)["y"]: v for k, v in enumerate(by_row)}
@@ -248,9 +249,9 @@ class DisconnectTests(unittest.TestCase):
         with mock.patch.object(fishing, "roblox_client_rect", return_value=fishing.PixelRect(0, 0, 800, 600)), \
                 mock.patch.object(fishing, "grab", return_value=np.zeros((10, 10, 3), np.uint8)), \
                 mock.patch.object(fishing, "disconnected_text", return_value="Disconnected | Reconnect"), \
-                mock.patch.object(fishing, "close_roblox", return_value=True) as close:
-            with self.assertRaises(fishing.Disconnected):
-                f._check_connection()
+                mock.patch.object(fishing, "close_roblox", return_value=True) as close, \
+                self.assertRaises(fishing.Disconnected):
+            f._check_connection()
         close.assert_called_once()
         self.assertTrue(f.disconnected)
 

@@ -53,7 +53,7 @@ def run_log(msg: str) -> None:
     if RUN_LOG.exists() and RUN_LOG.stat().st_size > RUN_LOG_MAX_BYTES:
         RUN_LOG.write_text("", encoding="utf-8")
     with open(RUN_LOG, "a", encoding="utf-8") as f:
-        f.write("%s  %s\n" % (time.strftime("%H:%M:%S"), msg))
+        f.write("{}  {}\n".format(time.strftime("%H:%M:%S"), msg))
 
 
 def annotate(image: np.ndarray, reading: Reading | None, height: int) -> np.ndarray:
@@ -298,14 +298,14 @@ class App(ctk.CTk):
 
     def _refresh_setup(self) -> None:
         p = self.cfg["cast_point"]
-        self._cast_lbl.configure(text="Clicks at %.0f%% across, %.0f%% down." % (p["x"] * 100, p["y"] * 100)
+        self._cast_lbl.configure(text="Clicks at {:.0f}% across, {:.0f}% down.".format(p["x"] * 100, p["y"] * 100)
                                  if p else "Not picked yet.")
 
     # ---------- helpers ----------
 
     @staticmethod
     def _fmt(v: float) -> str:
-        return ("%.4f" % v).rstrip("0").rstrip(".")
+        return f"{v:.4f}".rstrip("0").rstrip(".")
 
     def _post(self, fn) -> None:
         self._posted.put(fn)
@@ -331,7 +331,7 @@ class App(ctk.CTk):
 
     def _append_log(self, text: str) -> None:
         run_log(text)
-        line = "%s  %s" % (time.strftime("%H:%M:%S"), text)
+        line = "{}  {}".format(time.strftime("%H:%M:%S"), text)
         self._log_lines = (self._log_lines + [line])[-LOG_LINES:]
         if self._log_win is not None and self._log_win.winfo_exists():
             box = self._log_win.box
@@ -598,7 +598,7 @@ class App(ctk.CTk):
     def _work(self, fisher: Fisher, job) -> None:
         try:
             reason = job(fisher)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 -- the run ends; the log keeps the traceback
             run_log(traceback.format_exc())
             reason = f"Stopped by an error: {exc}. Details are in run-log.txt."
         self._post(lambda: self._on_run_ended(reason))
@@ -660,7 +660,7 @@ class App(ctk.CTk):
             return
         el = time.monotonic() - self._started_at
         last = f" Last catch: {self._last_item}." if self._last_item else ""
-        self._clock.configure(text="Fishing for %s.%s" % (time.strftime("%H:%M:%S", time.gmtime(el)), last))
+        self._clock.configure(text="Fishing for {}.{}".format(time.strftime("%H:%M:%S", time.gmtime(el)), last))
         if el >= 60:
             self._nums["rate"].configure(text="%.0f" % (self._stats["caught"] * 3600 / el))
         self.after(1000, self._tick_clock)
@@ -709,14 +709,13 @@ class App(ctk.CTk):
         if not missing:
             return
         names = [n for n, _ in missing]
-        self._set_status("Allow %s for Terminal under %s, then open the app again." % (" and ".join(names), where),
+        self._set_status("Allow {} for Terminal under {}, then open the app again.".format(" and ".join(names), where),
                          error=True)
         if messagebox.askyesno(
             "Permissions needed",
-            "The macro needs these permissions, granted to Terminal:\n\n    %s\n\n"
-            "They are under %s. Turn Terminal on in each list, then quit Terminal "
-            "(Cmd-Q) and open the app again.\n\nOpen %s settings now?"
-            % ("\n    ".join(names), where, names[0]),
+            "The macro needs these permissions, granted to Terminal:\n\n    {}\n\n"
+            "They are under {}. Turn Terminal on in each list, then quit Terminal "
+            "(Cmd-Q) and open the app again.\n\nOpen {} settings now?".format("\n    ".join(names), where, names[0]),
             parent=self,
         ):
             subprocess.Popen(["open", "x-apple.systempreferences:com.apple.preference.security?" + missing[0][1]])

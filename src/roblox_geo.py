@@ -59,7 +59,7 @@ def resolve_origin() -> CoordOrigin:
 
 def point_to_screen(fx: float, fy: float, origin: CoordOrigin | None = None) -> tuple[int, int]:
     o = origin or resolve_origin()
-    return int(round(o.x + float(fx) * o.w)), int(round(o.y + float(fy) * o.h))
+    return round(o.x + float(fx) * o.w), round(o.y + float(fy) * o.h)
 
 
 def point_from_screen(sx: int, sy: int, origin: CoordOrigin | None = None) -> tuple[float, float]:
@@ -74,8 +74,8 @@ def clamp_point(fx: float, fy: float) -> tuple[float, float]:
 def rect_to_screen(fx: float, fy: float, fw: float, fh: float, origin: CoordOrigin | None = None) -> PixelRect:
     o = origin or resolve_origin()
     return PixelRect(
-        x=int(round(o.x + float(fx) * o.w)),
-        y=int(round(o.y + float(fy) * o.h)),
-        w=max(1, int(round(float(fw) * o.w))),
-        h=max(1, int(round(float(fh) * o.h))),
+        x=round(o.x + float(fx) * o.w),
+        y=round(o.y + float(fy) * o.h),
+        w=max(1, round(float(fw) * o.w)),
+        h=max(1, round(float(fh) * o.h)),
     )

@@ -8,9 +8,9 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-import screen_text  # noqa: E402
-import config  # noqa: E402
-import fishing  # noqa: E402
+import config
+import fishing
+import screen_text
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
@@ -53,7 +53,7 @@ class ReaderTests(unittest.TestCase):
         self.assertIsNone(screen_text._COUNT.search("Exotic Tigerfin"))
 
     def test_no_count_in_other_ui(self):
-        count, why = screen_text.read_count(image("gap_middle")[:120])
+        count, _ = screen_text.read_count(image("gap_middle")[:120])
         self.assertIsNone(count)
 
     def test_reads_new_item_banner_and_rarity(self):
@@ -66,7 +66,7 @@ class ReaderTests(unittest.TestCase):
                 self.assertEqual((got, got_rarity), (item, rarity), text)
 
     def test_no_banner(self):
-        got, rarity, why = screen_text.read_item(image("item_none"))
+        got, _, _ = screen_text.read_item(image("item_none"))
         self.assertIsNone(got)
 
     def _recoloured(self, colour_at):
@@ -385,7 +385,7 @@ class OutOfBaitTests(unittest.TestCase):
         f.abort = lambda: sum(1 for e in log if e[0] == "click") >= 6
         with mock.patch.object(fishing.time, "monotonic", side_effect=lambda: clock[0]), \
                 mock.patch.object(fishing, "sleep_interruptible", side_effect=sleep), \
-                mock.patch.object(fishing, "click_point", side_effect=lambda pt, **kw: log.append(("click", clock[0]))), \
+                mock.patch.object(fishing, "click_point", side_effect=lambda p, **k: log.append(("click", clock[0]))), \
                 mock.patch.object(fishing, "tap_key", side_effect=lambda k, **kw: log.append((k, clock[0]))), \
                 mock.patch.object(fishing, "roblox_running", return_value=True), \
                 mock.patch.object(f, "_focus"), \

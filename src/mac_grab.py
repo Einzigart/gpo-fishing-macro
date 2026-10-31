@@ -55,7 +55,7 @@ def _open(paths, name):
     found = ctypes.util.find_library(name)
     if found:
         return ctypes.cdll.LoadLibrary(found)
-    raise OSError("%s not found" % name)
+    raise OSError(f"{name} not found")
 
 
 def _bind(lib, name, argtypes, restype):
@@ -111,7 +111,7 @@ def _load() -> _Lib | None:
             if _lib is None and not _lib_failed:
                 try:
                     _lib = _Lib()
-                except Exception:
+                except Exception:  # noqa: BLE001 -- any load failure means: use the mss fallback
                     _lib_failed = True
     return _lib
 
@@ -121,7 +121,7 @@ def _roblox_window() -> int | None:
     if now - _window[0] > WINDOW_TTL_SEC:
         try:
             _window[1] = find_roblox_hwnd()
-        except Exception:
+        except Exception:  # noqa: BLE001 -- no window id means: capture the whole screen area
             _window[1] = None
         _window[0] = now
     return _window[1]
@@ -199,5 +199,5 @@ def grab(x: int, y: int, w: int, h: int) -> np.ndarray | None:
             _forget_window()
         frame = _capture(lib, rect, LIST_ON_SCREEN, 0)
         return frame
-    except Exception:
+    except Exception:  # noqa: BLE001 -- None tells the caller to use the mss fallback
         return None

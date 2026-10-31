@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from track_control import TrackController  # noqa: E402
+from track_control import TrackController
 
 FPS = 60
 TRACK = 380.0   # track length in px, from the gap_middle fixture

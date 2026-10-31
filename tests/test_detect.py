@@ -7,7 +7,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from detect import Detector  # noqa: E402
+from detect import Detector
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 

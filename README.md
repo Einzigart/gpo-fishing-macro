@@ -79,3 +79,9 @@ When you stop, the log shows the session total per rarity.
 ```bash
 .venv/bin/python -m unittest discover tests
 ```
+
+Lint with ruff (its default rules, at the 120-column width in `ruff.toml`):
+
+```bash
+uvx ruff check src tests
+```

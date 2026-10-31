@@ -5,3 +5,4 @@ config.json
 config.tmp
 *-log.txt
 no-bite-snapshots/
+.ruff_cache/

@@ -249,7 +249,7 @@ def read_item(image: np.ndarray) -> tuple[str | None, str | None, str]:
             return name, rarity, text
     if not lines:
         return None, None, "no text in the banner area"
-    return None, None, "no New Item banner in %r" % " | ".join(t for _, t, _, _ in lines)
+    return None, None, "no New Item banner in {!r}".format(" | ".join(t for _, t, _, _ in lines))
 
 
 def text_boxes(image: np.ndarray) -> list[tuple[str, Box]]:

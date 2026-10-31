@@ -100,7 +100,7 @@ def _runs(flags: np.ndarray) -> list[tuple[int, int]]:
 
 
 def _bridge(w: int) -> int:
-    return max(BRIDGE_MIN, int(round(BRIDGE_PER_W * w)))
+    return max(BRIDGE_MIN, round(BRIDGE_PER_W * w))
 
 
 def _close(flags: np.ndarray, hole: int) -> np.ndarray:
