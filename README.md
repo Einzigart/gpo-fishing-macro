@@ -59,7 +59,11 @@ a catch. For the fish and items the GPO wiki lists, the app uses the wiki name a
 rarity, which also fixes small misreads. For anything else, the rarity comes from the
 name colour: green is Common, teal is Rare, lavender is Epic, and rainbow is Legendary.
 Any other colour (fruits, for example) is logged as "unknown (<colour>)".
-When you stop, the log shows the session total per rarity.
+
+Under the counters, the app shows the session total per rarity. Each catch is also
+saved to `catches.csv`, so the history lasts between runs. Press **Catches…** to see
+the session totals, the all-time totals per rarity, and how often you caught each
+fish or item. A catch whose name could not be read is saved as "(name not read)".
 
 ## Hotkeys
 
@@ -71,6 +75,7 @@ When you stop, the log shows the session total per rarity.
 ## Files
 
 - `config.json` holds your settings. Delete it to go back to the defaults.
+- `catches.csv` holds every catch (time, name, rarity). Delete it to start a new history.
 - `run-log.txt` holds the run log. Send it with `diagnose-log.txt` (from
   `Diagnose.command`) when you report a problem.
 

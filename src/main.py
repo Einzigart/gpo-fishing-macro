@@ -21,6 +21,7 @@ import cv2
 import mss
 import numpy as np
 
+import catch_log
 import config
 import platform_keys
 from detect import Detector, Reading
@@ -85,13 +86,14 @@ class App(ctk.CTk):
         self._picker: tk.Toplevel | None = None
         self._started_at = 0.0
         self._last_item: str | None = None
-        self._rarities: dict[str, int] = {}
+        self._session: list[dict] = []
         self._stats = dict.fromkeys(("cast", "bite", "caught", "lost", "unclear", "timeout"), 0)
         self._lockable: list = []
         self._bait_rows: list[dict] = []
         self._log_lines: list[str] = []
         self._log_win: ctk.CTkToplevel | None = None
         self._tune_win: ctk.CTkToplevel | None = None
+        self._catch_win: ctk.CTkToplevel | None = None
         self._hidden: list[tk.Misc] = []
 
         self._f_title = ctk.CTkFont(size=20, weight="bold")
@@ -190,6 +192,11 @@ class App(ctk.CTk):
             self._nums[key] = n
         self._clock = self._label(f, "Not fishing yet.", self._f_small, MUTED)
         self._clock.pack(fill="x")
+        row = ctk.CTkFrame(f, fg_color=PAPER)
+        row.pack(fill="x")
+        self._button(row, "Catches…", self._open_catches).pack(side="right")
+        self._session_lbl = self._label(row, "", self._f_small, MUTED)
+        self._session_lbl.pack(side="left", fill="x", expand=True)
 
     def _build_baits(self, f) -> None:
         self._bait_box = ctk.CTkFrame(f, fg_color=PAPER)
@@ -437,6 +444,49 @@ class App(ctk.CTk):
         self._button(win, "Reset to defaults", self._reset_advanced).pack(anchor="w", padx=18, pady=(0, 16))
         self._tune_win = win
 
+    def _open_catches(self) -> None:
+        if self._catch_win is not None and self._catch_win.winfo_exists():
+            self._catch_win.lift()
+            return
+        self._catch_win = self._side_window("Catches")
+        self._catch_win.geometry("440x520")
+        self._render_catches()
+
+    def _render_catches(self) -> None:
+        """Fill the Catches window from the session and the saved history."""
+        win = self._catch_win
+        if win is None or not win.winfo_exists():
+            return
+        for child in win.winfo_children():
+            child.destroy()
+
+        def head(text: str) -> None:
+            self._label(win, text, self._f_head).pack(fill="x", padx=18, pady=(14, 0))
+
+        def line(text: str, color: str = MUTED) -> None:
+            self._label(win, text, self._f_small, color, wraplength=400).pack(fill="x", padx=18)
+
+        head("This session")
+        line(catch_log.rarity_line(catch_log.tally(self._session)) if self._session else "Nothing caught yet.")
+        head("All time")
+        try:
+            rows = catch_log.load()
+        except catch_log.CatchLogError as exc:
+            line(str(exc), RED)
+            return
+        if not rows:
+            line(f"No catches saved yet. Each catch is saved to {catch_log.CATCH_LOG.name}.")
+            return
+        line(f"{len(rows)} since {rows[0]['time'][:10]}: {catch_log.rarity_line(catch_log.tally(rows))}")
+        table = ctk.CTkScrollableFrame(win, fg_color=PAPER)
+        table.pack(fill="both", expand=True, padx=12, pady=(8, 14))
+        table.grid_columnconfigure(0, weight=1)
+        for c, text in enumerate(("Fish or item", "Rarity", "Caught")):
+            self._label(table, text, self._f_bold).grid(row=0, column=c, sticky="w", padx=(0, 14))
+        for r, (name, rarity, n) in enumerate(catch_log.by_name(rows), start=1):
+            for c, text in enumerate((name, rarity, str(n))):
+                self._label(table, text, self._f_small).grid(row=r, column=c, sticky="w", padx=(0, 14))
+
     def _commit_advanced(self, key: str) -> None:
         raw = self._adv_vars[key].get().strip()
         try:
@@ -562,7 +612,7 @@ class App(ctk.CTk):
             return
         self._stats = dict.fromkeys(self._stats, 0)
         self._last_item = None
-        self._rarities = {}
+        self._session = []
         self._started_at = time.monotonic()
         self._refresh_numbers()
         self._start_worker(lambda fisher: fisher.run(), "Fishing started.")
@@ -616,7 +666,7 @@ class App(ctk.CTk):
         if game is None:
             return
         self._hidden = []
-        for win in (self._log_win, self._tune_win, self):
+        for win in (self._log_win, self._tune_win, self._catch_win, self):
             if win is None or not win.winfo_exists() or win.state() != "normal":
                 continue
             x, y, w, h = win.winfo_rootx(), win.winfo_rooty(), win.winfo_width(), win.winfo_height()
@@ -639,9 +689,8 @@ class App(ctk.CTk):
         self._refresh_baits()
         self._save()
         self._set_status(reason, error=not reason.startswith(("Stopped.", "Test buy done")))
-        if self._rarities:
-            self._append_log("Session catches: " + ", ".join(
-                f"{n} {r}" for r, n in sorted(self._rarities.items(), key=lambda kv: -kv[1])) + ".")
+        if self._session:
+            self._append_log(f"Session catches: {catch_log.rarity_line(catch_log.tally(self._session))}.")
 
     def _on_frame(self, image: np.ndarray, reading: Reading | None) -> None:
         self._frame = (image, reading)
@@ -669,6 +718,7 @@ class App(ctk.CTk):
         for key in ("cast", "caught", "lost"):
             self._nums[key].configure(text=str(self._stats[key]))
         self._nums["rate"].configure(text="–")
+        self._session_lbl.configure(text=catch_log.rarity_line(catch_log.tally(self._session)))
 
     def _on_event(self, kind: str, catch: Catch | None) -> None:
         self._stats[kind] += 1
@@ -676,13 +726,24 @@ class App(ctk.CTk):
             self._nums[key].configure(text=str(self._stats[key]))
         if catch is not None:
             self._last_item = f"{catch.name} ({catch.rarity})"
-            self._rarities[catch.rarity] = self._rarities.get(catch.rarity, 0) + 1
+        if kind == "caught":
+            self._record_catch(catch)
         notes = {"caught": f"Caught {self._last_item}." if catch else "Caught a fish.",
                  "lost": "The fish got away.",
                  "unclear": "Minigame ended. The catch meter was not seen, so the result is unknown.",
                  "timeout": "Minigame ran past the time limit. Casting again."}
         if kind in notes:
             self._append_log(notes[kind])
+
+    def _record_catch(self, catch: Catch | None) -> None:
+        entry = catch_log.row(catch)
+        self._session.append(entry)
+        self._session_lbl.configure(text=catch_log.rarity_line(catch_log.tally(self._session)))
+        try:
+            catch_log.append(entry)
+        except OSError as exc:
+            self._set_status(f"Could not save the catch to {catch_log.CATCH_LOG.name}: {exc}", error=True)
+        self._render_catches()
 
     def _on_bait_changed(self) -> None:
         self._refresh_baits()
