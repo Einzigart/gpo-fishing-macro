@@ -18,11 +18,12 @@ FIXTURES = Path(__file__).resolve().parent / "fixtures"
 def make(counts: list[int | None], use: list[bool] | None = None) -> fishing.Fisher:
     use = use or [True] * len(counts)
     cfg = {**config.DEFAULTS, "advanced": dict(config.ADVANCED_DEFAULTS), "bait_index": 0,
-           "baits": [{"name": f"b{i}", "use": u, "count": n, "point": {"x": i / 10, "y": 0.5}}
-                     for i, (n, u) in enumerate(zip(counts, use))]}
+           "baits": [{"name": f"b{i}", "use": u, "count": n} for i, (n, u) in enumerate(zip(counts, use))]}
     hooks = fishing.Hooks(status=lambda m: None, event=lambda k, catch: None, frame=lambda i, r: None,
                           bait_changed=lambda: None)
-    return fishing.Fisher(cfg, hooks, should_abort=lambda: False)
+    f = fishing.Fisher(cfg, hooks, should_abort=lambda: False)
+    f._rows = {f"b{i}": i for i in range(len(counts))}  # bait b<i> in panel row i
+    return f
 
 
 def image(name: str):
@@ -104,20 +105,29 @@ class ReaderTests(unittest.TestCase):
 class BaitTests(unittest.TestCase):
     def setUp(self):
         self.clicks = []
-        # point x -> count shown on the panel, missing = unreadable; a list is
-        # read one value per try (misreads first).
+        self.selected = []  # results of the gold-frame check, in order; True once empty
+        # Panel row k sits at x = k/10. self.screen: x -> count shown there
+        # (missing = row unreadable or empty; a list is read one value per try,
+        # misreads first). self.names: row k -> bait name, "b<k>" by default.
         self.screen = {}
+        self.names = {}
 
         def read(p):
-            v = self.screen.get(p["x"])
+            if p["x"] not in self.screen:
+                return None, ""
+            k = round(p["x"] * 10)
+            v = self.screen[p["x"]]
             if isinstance(v, list):
                 v = v.pop(0) if len(v) > 1 else v[0]
-            return v, "fake"
+            return v, f"{self.names.get(k, f'b{k}')} x{v}"
 
         for name, fake in (
             ("click_point", lambda pt, **kw: self.clicks.append(pt.x)),
             ("read_bait_count", read),
             ("sleep_interruptible", lambda *a, **kw: False),
+            ("row_spot", lambda k: {"x": k / 10, "y": 0.5}),
+            ("row_bait", lambda row, names: row.split()[0] if row else None),
+            ("bait_selected", lambda p: self.selected.pop(0) if self.selected else True),
         ):
             patcher = mock.patch.object(fishing, name, side_effect=fake)
             patcher.start()
@@ -146,11 +156,86 @@ class BaitTests(unittest.TestCase):
         self.assertEqual(f.cfg["bait_index"], 1)
         self.assertEqual(self.clicks, [0.1])
 
-    def test_unreadable_common_at_start_still_fishes(self):
+    def test_bait_missing_from_panel_is_skipped(self):
+        # The panel lists only owned baits; one you have none of is skipped.
+        f = make([5, 5])
+        f._rows = {}  # a run starts with no map
+        self.screen[0.0] = 5  # only b0 is listed
+        f._read_all_baits()
+        self.assertEqual(f._rows, {"b0": 0})
+        self.assertEqual(f.cfg["baits"][1]["count"], 0)
+        f._next_bait(select=True)
+        self.assertEqual(f.cfg["bait_index"], 0)
+        self.assertEqual(self.clicks, [0.0])
+
+    def test_rows_moved_up_when_a_bait_type_is_missing(self):
+        # The user's case (2026-10-30): no Legendary, so Rare and Common sit one row higher.
+        f = make([None, 5, 5])
+        f._rows = {}
+        self.names = {0: "b1", 1: "b2"}
+        self.screen.update({0.0: 18, 0.1: 114})
+        f._read_all_baits()
+        self.assertEqual(f._rows, {"b1": 0, "b2": 1})
+        self.assertEqual([b["count"] for b in f.cfg["baits"]], [0, 18, 114])
+
+    def test_no_panel_stops_at_start(self):
+        f = make([5])
+        f._rows = {}
+        with self.assertRaises(fishing.StopRun) as ctx:
+            f._read_all_baits()
+        self.assertIn("Equip the rod", str(ctx.exception))
+
+    def test_rows_shift_mid_run_are_remapped(self):
+        # b0 is gone, so b1 moved up to row 0 while the app was using it at row 1.
+        f = make([5, 5])
+        f.cfg["bait_index"] = 1
+        self.names = {0: "b1"}
+        self.screen[0.0] = 4
+        f._use_bait()
+        self.assertEqual(f._rows, {"b1": 0})
+        self.assertEqual(f.cfg["baits"][1]["count"], 4)
+
+    def test_unreadable_row_without_a_shift_is_kept(self):
+        # Row 1 fails to read for a moment while row 0 is unchanged: keep b1.
+        f = make([5, 5])
+        self.screen[0.0] = 5
+        f._scan_panel()
+        self.assertEqual(f._rows, {"b0": 0, "b1": 1})
+        self.assertEqual(f.cfg["baits"][1]["count"], 5)
+
+    def test_blank_scan_keeps_the_layout(self):
+        f = make([5, 5])
+        f._scan_panel()  # nothing readable
+        self.assertEqual(f._rows, {"b0": 0, "b1": 1})
+        self.assertEqual([b["count"] for b in f.cfg["baits"]], [5, 5])
+
+    def test_select_retries_then_confirms(self):
+        f = make([5])
+        self.selected = [False, True]
+        f._select_bait()
+        self.assertEqual(self.clicks, [0.0, 0.0])
+
+    def test_select_that_never_takes_stops_before_casting(self):
+        # 2026-10-29: an unregistered click let a cast use the last Legendary bait.
+        f = make([5])
+        self.selected = [False, False]
+        with self.assertRaises(fishing.StopRun) as ctx:
+            f._select_bait()
+        self.assertIn("did not select it", str(ctx.exception))
+
+    def test_hidden_panel_does_not_stop(self):
+        f = make([5])
+        self.selected = [None]
+        f._select_bait()
+        self.assertEqual(self.clicks, [0.0])
+
+    def test_unknown_count_mid_run_keeps_fishing(self):
         f = make([1, 1])
-        self.screen[0.0] = 1  # Rare reads 1; Common can't be read
+        self.screen.update({0.0: 1, 0.1: 5})
         f._read_all_baits()
         f._next_bait(select=True)
+        del self.screen[0.1]  # Common's count can't be read after a catch
+        f._use_bait()
         self.assertEqual(f.cfg["bait_index"], 1)
         self.assertIsNone(f.cfg["baits"][1]["count"])
 
@@ -162,7 +247,7 @@ class BaitTests(unittest.TestCase):
 
     def test_switches_when_panel_shows_last_one(self):
         f = make([40, 5])
-        self.screen[0.0] = 1
+        self.screen.update({0.0: 1, 0.1: 5})
         f._use_bait()
         self.assertEqual(f.cfg["bait_index"], 1)
 
@@ -201,11 +286,6 @@ class BaitTests(unittest.TestCase):
             f._use_bait()
         self.assertEqual(f.cfg["baits"][0]["count"], 1)
 
-    def test_check_ready_needs_bait_point(self):
-        f = make([3])
-        f.cfg["baits"][0]["point"] = None
-        self.assertIn("Pick the spot", fishing.check_ready(f.cfg))
-
     def test_check_ready_needs_a_ticked_bait(self):
         f = make([3], use=[False])
         self.assertIn("Tick at least one", fishing.check_ready(f.cfg))
@@ -219,6 +299,32 @@ class ItemTests(unittest.TestCase):
         with mock.patch.object(fishing, "read_new_item", side_effect=lambda: next(reads)), \
                 mock.patch.object(fishing, "sleep_interruptible", return_value=False):
             self.assertEqual(f._look_for_item()[0], grouper)
+
+
+class SpotTests(unittest.TestCase):
+    def test_row_spots_follow_the_measured_layout(self):
+        ys = [fishing.row_spot(k)["y"] for k in range(3)]
+        self.assertAlmostEqual(ys[0], 0.742, places=3)
+        self.assertAlmostEqual(ys[1] - ys[0], 0.0355, places=4)
+        self.assertAlmostEqual(ys[2] - ys[1], 0.0355, places=4)
+        self.assertEqual({fishing.row_spot(k)["x"] for k in range(3)}, {0.5})
+
+    def test_selected_frame(self):
+        # Gold frame above and below = selected (the user's screenshots).
+        for name, want in (("panel3_legendary", True), ("panel3_rare", False), ("panel3_common", False),
+                           ("bait_two_rows_common_x299", True), ("bait_two_rows_rare_x30", False),
+                           ("bait_x296", True)):
+            with self.subTest(name=name):
+                self.assertIs(screen_text.row_selected(image(name)), want)
+        self.assertIsNone(screen_text.row_selected(image("item_none")[:80, :560]))
+
+    def test_computed_spots_read_their_own_rows(self):
+        # Strips cut at the computed spots from the user's 3-row screenshot (2026-10-26).
+        for name, count in (("Legendary Fish Bait", 33), ("Rare Fish Bait", 22), ("Common Fish Bait", 300)):
+            with self.subTest(name=name):
+                got, row = screen_text.read_count(image("panel3_" + name.split()[0].lower()))
+                self.assertEqual(got, count, row)
+                self.assertEqual(screen_text.row_bait(row, list(config.BAIT_TYPES)), name)
 
 
 class BusoTests(unittest.TestCase):
@@ -244,6 +350,7 @@ class BusoTests(unittest.TestCase):
         with mock.patch.object(fishing, "tap_key", side_effect=lambda k, **kw: presses.append(k)), \
                 mock.patch.object(fishing.time, "monotonic", side_effect=lambda: clock[0]), \
                 mock.patch.object(fishing, "read_bait_count", return_value=(150, "x150")), \
+                mock.patch.object(fishing, "row_spot", return_value={"x": 0.5, "y": 0.8}), \
                 mock.patch.object(fishing, "click_point"):
             for t in (1000.0, 1020.0, 1040.0):  # a catch every 20 s
                 clock[0] = t
@@ -282,6 +389,7 @@ class OutOfBaitTests(unittest.TestCase):
                 mock.patch.object(fishing, "tap_key", side_effect=lambda k, **kw: log.append((k, clock[0]))), \
                 mock.patch.object(fishing, "roblox_running", return_value=True), \
                 mock.patch.object(f, "_focus"), \
+                mock.patch.object(f, "_check_connection"), \
                 mock.patch.object(f.hooks, "event", side_effect=lambda k, c: log.append(("event", k))):
             self.assertEqual(f._idle(), "Stopped.")
         return log

@@ -23,6 +23,7 @@ from roblox_geo import PixelRect, resolve_origin, roblox_client_rect
 from screen_text import (
     DISCONNECT_AREA,
     row_bait,
+    row_selected,
     SHOP_AREA,
     area_rect,
     disconnected_text,
@@ -78,6 +79,17 @@ COMMON_BAIT = "Common Fish Bait"
 SHOP_STEP_WAIT_SEC = 4.0
 SHOP_POLL_SEC = 0.3
 SHOP_AFTER_SEC = 1.0
+# The "Fishing Baits" panel lists only the baits the player owns, one row each,
+# from the top. Measured on 2026-10-26 in 3-, 2- and 1-row screenshots of two
+# window sizes: rows centred across, the first at 74.1-74.2% down, each next
+# 3.55-3.6% lower. Which bait sits in which row is read from the row names.
+PANEL_ROW_X = 0.5
+PANEL_FIRST_ROW_Y = 0.742
+PANEL_ROW_STEP = 0.0355
+# Bait selection: clicks per try, and the wait before checking the gold frame.
+# NOT MEASURED YET: how fast the frame moves after a click.
+SELECT_TRIES = 2
+SELECT_SETTLE_SEC = 0.5
 # The user keeps the last bait of each type and wants anti-AFK casts once
 # it is reached (2026-10-24).
 KEEP_LAST_BAIT = 1
@@ -149,14 +161,18 @@ def grab(rect: PixelRect, sct) -> np.ndarray:
     return np.ascontiguousarray(frame)
 
 
-def read_bait_count(point: dict) -> tuple[int | None, str]:
-    """Bait count shown on the panel row at `point`, and the text read (or why it failed)."""
+def bait_selected(point: dict) -> bool | None:
+    """Whether the panel row at `point` shows the gold "selected" frame (None: no row seen)."""
     with _MSS() as sct:
         image = grab(strip_rect(point, resolve_origin()), sct)
-    count, text = read_count(image)
-    if count is not None and count > BAIT_MAX:
-        return None, f"read {count}, more than the game maximum of {BAIT_MAX} ({text!r})"
-    return count, text
+    return row_selected(image)
+
+
+def read_bait_count(point: dict) -> tuple[int | None, str]:
+    """(Bait count or None, text of the panel row at `point`; "" when none was read)."""
+    with _MSS() as sct:
+        image = grab(strip_rect(point, resolve_origin()), sct)
+    return read_count(image)
 
 
 def read_new_item() -> tuple[Catch | None, str]:
@@ -167,6 +183,11 @@ def read_new_item() -> tuple[Catch | None, str]:
     return (Catch(name, rarity) if name else None), text
 
 
+def row_spot(k: int) -> dict:
+    """Centre of row k (0 = top) of the "Fishing Baits" panel, as window fractions."""
+    return {"x": PANEL_ROW_X, "y": PANEL_FIRST_ROW_Y + PANEL_ROW_STEP * k}
+
+
 def _pt(raw: dict) -> FracPoint:
     return FracPoint(float(raw["x"]), float(raw["y"]))
 
@@ -175,12 +196,8 @@ def check_ready(cfg: dict) -> str | None:
     """Reason the run cannot start, or None."""
     if not cfg["cast_point"]:
         return "Set the cast point first."
-    used = [b for b in cfg["baits"] if b["use"]]
-    if not used:
+    if not any(b["use"] for b in cfg["baits"]):
         return "Tick at least one bait to use."
-    for b in used:
-        if not b["point"]:
-            return f"Pick the spot of {b['name']} in the Fishing Baits panel."
     return None
 
 
@@ -199,6 +216,7 @@ class Fisher:
         self.click = LeftClickController()
         self._read_ok = True
         self._buso_at: float | None = None
+        self._rows: dict[str, int] = {}  # bait name -> panel row, from _scan_panel
         self.disconnected = False
 
     def run(self) -> str:
@@ -265,9 +283,8 @@ class Fisher:
             why = self._buy_common()
             if why is not None:
                 return f"Test buy failed: {why}."
-            common = next((b for b in self.cfg["baits"] if b["name"] == COMMON_BAIT), None)
-            if common is None or not common["point"]:
-                return f"Test buy done. Pick the {COMMON_BAIT} spot to read its count."
+            common = next(b for b in self.cfg["baits"] if b["name"] == COMMON_BAIT)
+            self._scan_panel()
             self._set_count(common, None)
             self.hooks.bait_changed()
             n = common["count"]
@@ -296,15 +313,15 @@ class Fisher:
             return False
         baits = self.cfg["baits"]
         i = next((j for j, b in enumerate(baits) if b["name"] == COMMON_BAIT), None)
-        if i is None or not baits[i]["use"] or not baits[i]["point"]:
-            self.hooks.status("Auto-buy needs Common Fish Bait ticked with its spot picked.")
+        if i is None or not baits[i]["use"]:
+            self.hooks.status("Auto-buy needs Common Fish Bait ticked.")
             return False
         why = self._buy_common()
         if why is not None:
             self.hooks.status(f"Could not buy {COMMON_BAIT}: {why}.")
             return False
-        self.cfg["bait_index"] = i
-        self._select_bait()
+        # A first Common purchase adds its row, so map the panel again.
+        self._scan_panel()
         self._set_count(baits[i], None)
         self.hooks.bait_changed()
         if not _has_stock(baits[i]):
@@ -312,6 +329,8 @@ class Fisher:
             return False
         n = baits[i]["count"]
         self.hooks.status(f"Bought {COMMON_BAIT}; {'count unknown' if n is None else f'{n} left'}.")
+        self.cfg["bait_index"] = i
+        self._select_bait()
         return True
 
     def _shop_find(self, want: dict[str, Callable[[str], bool]]) -> dict[str, tuple[str, tuple[int, int]]] | None:
@@ -419,9 +438,29 @@ class Fisher:
         return self.cfg["baits"][self.cfg["bait_index"]]
 
     def _select_bait(self) -> None:
+        """Click the bait's row and confirm the game selected it.
+
+        A click that did not take let a cast use the last Legendary bait
+        (2026-10-29), so a row that stays unselected stops the run. When the
+        panel is hidden (rod away), nothing can be used up, so it carries on.
+        """
         bait = self._bait()
-        self.hooks.status(f"Selecting {bait['name']}...")
-        click_point(_pt(bait["point"]), settle_s=0.3, should_abort=self.abort)
+        spot = self._spot(bait)
+        if spot is None:
+            raise StopRun(f"{bait['name']} is not in the Fishing Baits panel any more.")
+        for _ in range(SELECT_TRIES):
+            self.hooks.status(f"Selecting {bait['name']}...")
+            click_point(_pt(spot), settle_s=SELECT_SETTLE_SEC, should_abort=self.abort)
+            if self.abort():
+                return
+            selected = bait_selected(spot)
+            if selected is None:
+                self.hooks.status(f"Could not see the bait panel to confirm {bait['name']} is selected.")
+                return
+            if selected:
+                return
+        raise StopRun(f"Clicked {bait['name']} {SELECT_TRIES} times but the game did not select it. "
+                      "Stopped before casting so no other bait is used by mistake.")
 
     def _read_count(self, bait: dict, expect: set[int] | None) -> tuple[int | None, str]:
         """Read a bait count from the panel, retrying until it can be trusted.
@@ -433,31 +472,73 @@ class Fisher:
         """
         seen: list[int] = []
         why = "not read"
+        rescanned = False
         for attempt in range(COUNT_READ_TRIES):
             if attempt and sleep_interruptible(COUNT_READ_GAP_SEC, self.abort):
                 break
-            count, text = read_bait_count(bait["point"])
-            if count is None:
-                why = text
+            spot = self._spot(bait)
+            if spot is None:
+                return 0, "not in the Fishing Baits panel"
+            count, row = read_bait_count(spot)
+            found = row_bait(row, list(BAIT_TYPES)) if row else None
+            if (found is not None and found != bait["name"]) or not row:
+                # Another bait or nothing at this row: the rows may have moved
+                # (a bait type gained or used up), so map them once more.
+                if found is not None and rescanned:
+                    raise StopRun(f"The Fishing Baits panel keeps changing: {bait['name']}'s row shows {found}.")
+                if not rescanned:
+                    rescanned = True
+                    self._scan_panel()
+                    continue
+            if count is None or count > BAIT_MAX:
+                why = (f"read {count}, more than the game maximum of {BAIT_MAX} ({row!r})" if count
+                       else f"no bait count in {row!r}" if row else "no text at the bait's row")
                 continue
-            self._check_row(bait, text)
             if (expect is not None and count in expect) or count in seen:
-                return count, text
+                return count, row
             seen.append(count)
             why = f"reads did not agree ({', '.join(map(str, seen))})"
         return None, why
 
-    def _check_row(self, bait: dict, row: str) -> None:
-        """Stop the run when the bait's spot now shows another bait.
+    def _spot(self, bait: dict) -> dict | None:
+        """Where the bait's row is now, or None when the panel does not list it."""
+        k = self._rows.get(bait["name"])
+        return None if k is None else row_spot(k)
 
-        Spots are fixed positions, and panel rows move when a bait type is
-        gained or runs out completely (2026-10-26: a new Legendary row pushed
-        Rare and Common down, so their spots selected the wrong bait).
+    def _scan_panel(self) -> None:
+        """Map each bait in the "Fishing Baits" panel to its row by reading the names.
+
+        The panel lists only owned baits, from the top, so a missing bait type
+        moves the rows below it up (2026-10-26/30: a gained or used-up Legendary
+        shifted Rare and Common). Ticked baits that are not listed get count 0.
         """
-        found = row_bait(row, list(BAIT_TYPES))
-        if found is not None and found != bait["name"]:
-            raise StopRun(f"The {bait['name']} spot now shows {found}: the Fishing Baits panel changed. "
-                          "Re-pick the bait spots, and keep at least 1 of every bait type so rows stay put.")
+        rows: dict[str, int] = {}
+        for k in range(len(BAIT_TYPES)):
+            name = None
+            for attempt in range(COUNT_READ_TRIES):
+                if attempt and sleep_interruptible(COUNT_READ_GAP_SEC, self.abort):
+                    break
+                _, row = read_bait_count(row_spot(k))
+                name = row_bait(row, list(BAIT_TYPES)) if row else None
+                if name is not None:
+                    break
+            if name is None or name in rows:
+                break  # rows run from the top without gaps
+            rows[name] = k
+        if not rows:
+            # Nothing readable (panel hidden or covered for a moment): keep the
+            # last map rather than treat every bait as gone.
+            self.hooks.status("Bait panel: nothing readable, keeping the last layout.")
+            return
+        if all(self._rows.get(n) == k for n, k in rows.items()):
+            # Every bait read is where it was, so nothing moved: a row that did
+            # not read is a misread, not a bait that is gone.
+            rows = {**self._rows, **rows}
+        self._rows = rows
+        self.hooks.status("Bait panel: " + ", ".join(f"{n} (row {k + 1})" for n, k in rows.items()) + ".")
+        for bait in self.cfg["baits"]:
+            if bait["use"] and bait["name"] not in rows:
+                bait["count"] = 0
 
     def _set_count(self, bait: dict, expect: set[int] | None) -> None:
         """Store the panel count, or None (unknown) when it can't be trusted.
@@ -473,10 +554,21 @@ class Fisher:
         bait["count"] = count
 
     def _read_all_baits(self) -> None:
-        """Update the count of every bait in use from the panel before the first cast."""
+        """Map the panel, then update the count of every ticked bait it lists.
+
+        A ticked bait the player has none of is skipped (count 0). With no bait
+        panel at all the rod is not out, so the run stops and says so.
+        """
+        self._scan_panel()
+        if not self._rows:
+            raise StopRun("Couldn't see the Fishing Baits panel. Equip the rod so it shows, then start again.")
         for bait in self.cfg["baits"]:
-            if bait["use"]:
+            if not bait["use"]:
+                continue
+            if bait["name"] in self._rows:
                 self._set_count(bait, None)
+            else:
+                self.hooks.status(f"{bait['name']} isn't in your bait panel, so it is skipped.")
         self.hooks.bait_changed()
 
     def _next_bait(self, select: bool) -> None:

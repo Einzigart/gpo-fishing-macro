@@ -17,20 +17,21 @@ or read game memory.
 1. In GPO, equip the rod. The Fishing Baits panel appears.
 2. Optional check: fish once by hand and press **Test detection** while the two bars
    show. A cyan box must sit on the dark gap and a magenta line on the fish.
-3. Under Bait, tick the baits to use (Common, Rare and Legendary Fish Bait, from the
-   GPO wiki) and set their order with the arrows. For each ticked bait, press
-   **Pick spot** and click its row in the Fishing Baits panel. The app reads each
-   count ("x296") from the panel at start and after each fish, and uses the ticked
-   baits top to bottom. It keeps the last one of each bait. When every ticked bait
-   is down to 1, fishing stops and the app goes anti-AFK: once a minute it casts and
-   reels straight back in, so Roblox does not kick you. If a count can't be read,
-   the log says why, the count shows as unknown, and the app keeps fishing with
-   that bait until a read works.
-   Spots are fixed screen positions, and the panel rows move when you gain a new
-   bait type or one runs out completely. Own at least 1 of all 3 baits (GPO has only
-   these 3), so the panel always shows the same 3 rows.
-   Each read also checks the bait name on the row; if a spot shows another bait, the
-   app stops and asks you to re-pick the spots.
+3. The app finds the baits by itself: it reads the names in the game's Fishing Baits
+   panel row by row, so there is nothing to pick, and baits you have none of are
+   skipped. The panel shows only the baits you own, so the app reads it again
+   whenever the rows may have moved, for example after buying Common bait.
+   Under Bait, tick the baits to use and set their order with the arrows. The app
+   reads each count ("x296") at start and after each fish, and uses the ticked baits
+   top to bottom. It keeps the last one of each bait. When every ticked bait is down
+   to 1, fishing stops and the app goes anti-AFK: once a minute it casts and reels
+   straight back in, so Roblox does not kick you.
+   If the panel isn't showing at start (rod not equipped), the app stops and says so.
+   After each bait click, the app checks the game's gold "selected" frame on that
+   row; if the bait still isn't selected after a second click, it stops before
+   casting, so it never uses the last bait of another type. If a count can't be read
+   mid-run, the log says why, the count shows as unknown, and the app keeps fishing
+   with that bait until a read works.
 4. Optional: tick **Buy Common Fish Bait when all bait is down to 1** and stand next
    to the Common Fish Bait seller. When every ticked bait is down to 1, the app presses
    E, clicks Yes, types the MAX amount, clicks Buy and closes the dialog, then keeps

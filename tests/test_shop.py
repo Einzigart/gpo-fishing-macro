@@ -29,11 +29,13 @@ def centre(lines, test):
 def make(counts, auto_buy=True):
     cfg = {**config.DEFAULTS, "advanced": dict(config.ADVANCED_DEFAULTS), "bait_index": 0,
            "auto_buy_common": auto_buy,
-           "baits": [{"name": n, "use": True, "count": c, "point": {"x": i / 10, "y": 0.5}}
-                     for i, (n, c) in enumerate(zip(("Rare Fish Bait", "Common Fish Bait"), counts))]}
+           "baits": [{"name": n, "use": True, "count": c}
+                     for n, c in zip(("Rare Fish Bait", "Common Fish Bait"), counts)]}
     hooks = fishing.Hooks(status=lambda m: None, event=lambda k, c: None, frame=lambda i, r: None,
                           bait_changed=lambda: None)
-    return fishing.Fisher(cfg, hooks, should_abort=lambda: False)
+    f = fishing.Fisher(cfg, hooks, should_abort=lambda: False)
+    f._rows = {"Rare Fish Bait": 0, "Common Fish Bait": 1}
+    return f
 
 
 class DialogReadTests(unittest.TestCase):
@@ -76,6 +78,7 @@ class BuyFlowTests(unittest.TestCase):
             ("tap_key", lambda k, **kw: self.log.append(("key", k))),
             ("sleep_interruptible", lambda *a, **kw: False),
             ("click_point", lambda pt, **kw: self.log.append(("pick", pt.x))),
+            ("bait_selected", lambda p: True),
         ):
             p = mock.patch.object(fishing, name, side_effect=fake)
             p.start()
@@ -207,19 +210,25 @@ class RowCheckTests(unittest.TestCase):
         self.assertEqual(screen_text.row_bait("Common Fish Bait x300", self.NAMES), "Common Fish Bait")
         self.assertIsNone(screen_text.row_bait("×30", self.NAMES))
 
-    def test_spot_showing_another_bait_stops_the_run(self):
-        f = make([20, 50])
-        with mock.patch.object(fishing, "read_bait_count", return_value=(33, "Legendary FishTait | X33")):
-            with self.assertRaises(fishing.StopRun) as ctx:
-                f._read_all_baits()
-        self.assertIn("Re-pick the bait spots", str(ctx.exception))
+    def _rows(self, by_row):
+        ys = {fishing.row_spot(k)["y"]: v for k, v in enumerate(by_row)}
+        return lambda p: ys.get(p["y"], (None, ""))
 
-    def test_spot_showing_its_own_bait_is_fine(self):
+    def test_panel_without_rare_maps_common_to_the_top_row(self):
         f = make([20, 50])
-        rows = {0.0: (22, "Rare Fish Bait | X22"), 0.1: (300, "Common Fish Bait x300")}
-        with mock.patch.object(fishing, "read_bait_count", side_effect=lambda p: rows[p["x"]]), \
+        with mock.patch.object(fishing, "read_bait_count", side_effect=self._rows([(300, "Common Fish Bait x300")])), \
                 mock.patch.object(fishing, "sleep_interruptible", return_value=False):
             f._read_all_baits()
+        self.assertEqual(f._rows, {"Common Fish Bait": 0})
+        self.assertEqual([b["count"] for b in f.cfg["baits"]], [0, 300])
+
+    def test_full_panel_reads_each_bait_at_its_row(self):
+        f = make([20, 50])
+        rows = [(33, "Legendary FishTait | X33"), (22, "Rare Fish Bait | X22"), (300, "Common Fish Bait x300")]
+        with mock.patch.object(fishing, "read_bait_count", side_effect=self._rows(rows)), \
+                mock.patch.object(fishing, "sleep_interruptible", return_value=False):
+            f._read_all_baits()
+        self.assertEqual(f._rows, {"Legendary Fish Bait": 0, "Rare Fish Bait": 1, "Common Fish Bait": 2})
         self.assertEqual([b["count"] for b in f.cfg["baits"]], [22, 300])
 
 

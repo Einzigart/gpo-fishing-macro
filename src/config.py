@@ -71,7 +71,7 @@ DEFAULTS = {
     # Open water above the character in the 2026-10-24 screenshots.
     "cast_point": {"x": 0.5, "y": 0.3},
     # In use order. "count" is None until it is read from the game panel.
-    "baits": [{"name": n, "use": n == "Common Fish Bait", "point": None, "count": None} for n in BAIT_TYPES],
+    "baits": [{"name": n, "use": n == "Common Fish Bait", "count": None} for n in BAIT_TYPES],
     "bait_index": 0,
     "rod_key": "",
     "use_buso": False,
@@ -95,7 +95,7 @@ def _baits(saved: list) -> list[dict]:
         n = b.get("count")
         if n is not None and (not isinstance(n, int) or not 0 <= n <= BAIT_MAX):
             raise ConfigError(f"{name} count is {n!r}, must be empty or a whole number 0-{BAIT_MAX}")
-        out.append({"name": name, "use": bool(b.get("use")), "point": b.get("point"), "count": n})
+        out.append({"name": name, "use": bool(b.get("use")), "count": n})
     return out
 
 

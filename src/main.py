@@ -24,7 +24,7 @@ import numpy as np
 import config
 import platform_keys
 from detect import Detector, Reading
-from fishing import Catch, Fisher, Hooks, bar_box, check_ready, grab, read_bait_count, read_new_item
+from fishing import Catch, Fisher, Hooks, bar_box, check_ready, grab, read_bait_count, read_new_item, row_spot
 from point_selector import ClickCapture, FracPoint
 from roblox_geo import roblox_client_rect
 from screen_text import row_bait
@@ -196,9 +196,8 @@ class App(ctk.CTk):
         self._bait_box.pack(fill="x")
         self._label(f, "Ticked baits are used top to bottom, keeping the last one of each. "
                        "When all are down to 1, the app casts and reels in once a minute so you "
-                       "don't get kicked for AFK. Spots are fixed, so own at least 1 of all 3 baits; "
-                       "then the panel always has the same 3 rows. If a row moves, the app stops "
-                       "and asks you to re-pick the spots.",
+                       "don't get kicked for AFK. The app reads the game's bait panel to find each "
+                       "bait, and skips a ticked bait you have none of.",
                     self._f_small, MUTED, wraplength=420).pack(fill="x", pady=(2, 0))
         self._render_baits()
 
@@ -215,17 +214,15 @@ class App(ctk.CTk):
             use = tk.BooleanVar(value=bait["use"])
             cb = self._check(top, bait["name"], use, lambda i=i, v=use: self._set_bait_use(i, v.get()))
             cb.pack(side="left")
-            pick = self._button(top, "", lambda i=i: self._set_bait_point(i), width=92)
-            pick.pack(side="right")
             down = self._button(top, "↓", lambda i=i: self._move_bait(i, 1), width=30)
-            down.pack(side="right", padx=(0, 6))
+            down.pack(side="right")
             up = self._button(top, "↑", lambda i=i: self._move_bait(i, -1), width=30)
             up.pack(side="right", padx=(0, 2))
             count = self._label(top, "", self._f_small, MUTED)
             count.pack(side="right", padx=(0, 10))
             self._label(fr, config.BAIT_TYPES[bait["name"]], self._f_small, MUTED).pack(fill="x", padx=(28, 0))
             # The row keeps `use` alive; Tk drops a variable nothing references.
-            self._bait_rows.append({"frame": fr, "count": count, "pick": pick, "use": cb, "use_var": use,
+            self._bait_rows.append({"frame": fr, "count": count, "use": cb, "use_var": use,
                                     "up": (up, i > 0), "down": (down, i < last)})
         self._refresh_baits()
 
@@ -236,8 +233,6 @@ class App(ctk.CTk):
             text = "count unknown" if n is None else f"{n} left"
             in_use = running and i == self.cfg["bait_index"]
             row["count"].configure(text=text + (", in use" if in_use else ""), text_color=GREEN if in_use else MUTED)
-            row["pick"].configure(text="Re-pick spot" if bait["point"] else "Pick spot",
-                                  state="disabled" if running else "normal")
             row["use"].configure(state="disabled" if running else "normal")
             for button, movable in (row["up"], row["down"]):
                 button.configure(state="normal" if movable and not running else "disabled")
@@ -499,14 +494,6 @@ class App(ctk.CTk):
             self._refresh_setup()
         self._capture_point("Click the open water where the rod should cast", store)
 
-    def _set_bait_point(self, i: int) -> None:
-        name = self.cfg["baits"][i]["name"]
-
-        def store(p: dict) -> None:
-            self.cfg["baits"][i]["point"] = p
-            self._refresh_baits()
-        self._capture_point(f"Click {name} in the Fishing Baits panel", store)
-
     # ---------- detection test ----------
 
     def _test_detection(self) -> None:
@@ -537,19 +524,24 @@ class App(ctk.CTk):
         self._set_status("Bars found. The cyan box should sit on the gap and the magenta line on the fish.")
 
     def _test_bait_counts(self) -> None:
-        """Read each bait count from the game panel and show what was read."""
-        for bait in self.cfg["baits"]:
-            if not bait["point"]:
-                continue
-            count, text = read_bait_count(bait["point"])
-            found = row_bait(text, list(config.BAIT_TYPES)) if count is not None else None
+        """Read the bait panel row by row, as a run does, and show what is in it."""
+        listed = set()
+        for k in range(len(config.BAIT_TYPES)):
+            count, row = read_bait_count(row_spot(k))
+            name = row_bait(row, list(config.BAIT_TYPES)) if row else None
+            if name is None:
+                self._append_log(f"Bait panel row {k + 1}: {'empty' if not row else repr(row)}.")
+                break
+            listed.add(name)
+            bait = next(b for b in self.cfg["baits"] if b["name"] == name)
             if count is None:
-                self._append_log(f"{bait['name']}: count not read ({text}).")
-            elif found is not None and found != bait["name"]:
-                self._append_log(f"{bait['name']}: its spot now shows {found}. Re-pick the bait spots.")
+                self._append_log(f"Bait panel row {k + 1}: {name}, count not read ({row!r}).")
             else:
                 bait["count"] = count
-                self._append_log(f"{bait['name']}: {count} left (read {text!r}).")
+                self._append_log(f"Bait panel row {k + 1}: {name}, {count} left.")
+        for bait in self.cfg["baits"]:
+            if bait["use"] and bait["name"] not in listed:
+                self._append_log(f"{bait['name']} is not in the panel; a run skips it.")
         self._save()
         self._refresh_baits()
 

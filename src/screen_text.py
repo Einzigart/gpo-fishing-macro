@@ -40,6 +40,12 @@ _DIGIT_LOOKALIKES = str.maketrans({"S": "5", "s": "5", "G": "6", "З": "3", "з"
                                    "Ц": "4", "ц": "4", "O": "0", "o": "0", "I": "1", "l": "1"})
 _COUNT = re.compile(r"[xX×хХ]\s*([0-9SsGЗзЦцOoIl]{1,3})(?![0-9A-Za-z])")
 
+# The selected bait row has a gold frame. Measured on 2026-10-30 on 8 row
+# strips: selected rows had 208-572 gold pixels both above and below the text;
+# unselected rows had 0-11 on at least one side (a selected neighbour's frame
+# can show on the other side). Gold is the frame and count colour.
+SELECTED_GOLD_MIN = 100
+
 # A panel row's bait name (difflib ratio). Real reads scored 0.92-1.0 on
 # 2026-10-26, including the rainbow "Legendary FishTait"; different bait names
 # score at most 0.74 against each other.
@@ -174,19 +180,18 @@ def _lines(image: np.ndarray) -> list[tuple[float, str, Box | None, Box]]:
 
 
 def read_count(image: np.ndarray) -> tuple[int | None, str]:
-    """Bait count on the panel row at the strip centre, and that row's text.
+    """(Bait count or None, text of the panel row at the strip centre).
 
-    Returns (None, reason) when that row has no "x<number>".
+    The row text is "" when nothing was read there. Its pieces (the name and
+    count may be read separately) are joined by " | ".
     """
     lines = sorted((d, t) for d, t, _, _ in _lines(image) if d <= ROW_REACH)
-    row = " | ".join(t for _, t in lines)  # the name and count may be separate pieces
+    row = " | ".join(t for _, t in lines)
     for _, text in lines:
         m = _COUNT.search(text)
         if m:
             return int(m.group(1).translate(_DIGIT_LOOKALIKES)), row
-    if not lines:
-        return None, "no text at the picked spot"
-    return None, "no bait count in %r" % " | ".join(t for _, t in lines)
+    return None, row
 
 
 def _hue_name(hue: float) -> str:
@@ -286,3 +291,22 @@ def row_bait(row: str, names: list[str]) -> str | None:
             if score > best_score:
                 best_score, best = score, name
     return best if best_score >= ROW_NAME_MATCH else None
+
+
+def row_selected(image: np.ndarray) -> bool | None:
+    """True when the panel row at the strip centre has the gold "selected" frame.
+
+    None when no row text is found there (for example the panel is hidden).
+    """
+    row = [box for d, _, _, box in _lines(image) if d <= ROW_REACH]
+    if not row:
+        return None
+    b, g, r = (image[:, :, i].astype(np.int16) for i in range(3))
+    gold = (r >= 180) & (g >= 110) & (g <= 215) & (b <= 110) & (r - b >= 100)
+    for x0, y0, x1, y1 in row:  # the count is gold too; only the frame counts
+        gold[max(0, y0 - 2):y1 + 2, max(0, x0 - 2):x1 + 2] = False
+    top, bot = min(b[1] for b in row), max(b[3] for b in row)
+    h = bot - top
+    above = int(gold[max(0, top - h):max(0, top - 2)].sum())
+    below = int(gold[bot + 2:bot + h].sum())
+    return above >= SELECTED_GOLD_MIN and below >= SELECTED_GOLD_MIN
