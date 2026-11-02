@@ -82,6 +82,15 @@ def main():
     q = sh(["xattr", "-l", os.path.join(ROOT, "Launch.command")])
     out("Launch.command   : %s" % (f"quarantined -- {q}" if "quarantine" in q
                                    else "not quarantined"))
+    app = os.path.join(ROOT, "GPO Fishing Macro.app")
+    launcher = os.path.join(app, "Contents", "MacOS", "launch")
+    if os.path.isdir(app):
+        q = sh(["xattr", "-l", app])
+        state = f"quarantined -- {q}" if "quarantine" in q else "not quarantined"
+        runs = "executable" if os.access(launcher, os.X_OK) else "NOT executable (run Setup.command)"
+        out(f"app              : {state}, launcher {runs}")
+    else:
+        out("app              : missing")
 
     section("Pythons on this Mac")
     cands = candidate_pythons()
@@ -116,6 +125,7 @@ def main():
             out(f"  {mod:<20} {ok:<8} {first if ok == 'ok' else r[:400]}")
 
     section("Permissions")
+    out("(These are Terminal's. GPO Fishing Macro.app has its own set.)")
     if os.path.exists(VENV_PY):
         code = ("\ntry:\n"
                 "    import Quartz\n"
@@ -140,6 +150,14 @@ def main():
         out(tail)
     else:
         out("(no setup-log.txt)")
+
+    section("Tail of app-log.txt")
+    log = os.path.join(ROOT, "app-log.txt")
+    if os.path.exists(log):
+        with open(log, "r", errors="replace") as fh:
+            out(fh.read()[-3000:])
+    else:
+        out("(no app-log.txt; the app was not opened yet)")
 
     out()
     out("end of diagnostic")

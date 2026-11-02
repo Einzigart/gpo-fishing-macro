@@ -7,6 +7,7 @@ that the Tk loop drains every 15 ms.
 from __future__ import annotations
 
 import base64
+import os
 import platform
 import queue
 import subprocess
@@ -770,13 +771,16 @@ class App(ctk.CTk):
         if not missing:
             return
         names = [n for n, _ in missing]
-        self._set_status("Allow {} for Terminal under {}, then open the app again.".format(" and ".join(names), where),
-                         error=True)
+        # The .app sets GPO_MACRO_HOST; Launch.command runs in Terminal.
+        host = os.environ.get("GPO_MACRO_HOST", "Terminal")
+        restart = ("quit the macro (F3) and open the app again" if host != "Terminal"
+                   else "quit Terminal (Cmd-Q) and start the macro again")
+        self._set_status(f"Allow {' and '.join(names)} for {host} under {where}, then {restart}.", error=True)
         if messagebox.askyesno(
             "Permissions needed",
-            "The macro needs these permissions, granted to Terminal:\n\n    {}\n\n"
-            "They are under {}. Turn Terminal on in each list, then quit Terminal "
-            "(Cmd-Q) and open the app again.\n\nOpen {} settings now?".format("\n    ".join(names), where, names[0]),
+            "The macro needs these permissions, granted to {}:\n\n    {}\n\n"
+            "They are under {}. Turn {} on in each list, then {}.\n\nOpen {} settings now?".format(
+                host, "\n    ".join(names), where, host, restart, names[0]),
             parent=self,
         ):
             subprocess.Popen(["open", "x-apple.systempreferences:com.apple.preference.security?" + missing[0][1]])

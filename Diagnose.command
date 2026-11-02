@@ -2,7 +2,7 @@
 cd "$(dirname "$0")" || exit 1
 
 xattr -d -r com.apple.quarantine . >/dev/null 2>&1
-chmod +x ./*.command src/*.sh >/dev/null 2>&1
+chmod +x ./*.command src/*.sh "GPO Fishing Macro.app/Contents/MacOS/launch" >/dev/null 2>&1
 
 PY_DIAG=""
 for c in /Library/Frameworks/Python.framework/Versions/3.12/bin/python3 \

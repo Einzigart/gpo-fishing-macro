@@ -1,7 +1,9 @@
 """Build the private .venv, install requirements once, then run the app.
 
-Usage: python bootstrap.py main.py [--check]
+Usage: python bootstrap.py main.py [--check] [--no-install]
 --check installs and prints the macOS permission notes without starting the app.
+--no-install exits with NOT_SET_UP instead of building .venv or installing
+packages. The .app uses it: it has no window to show a long install in.
 """
 import hashlib
 import importlib
@@ -17,6 +19,7 @@ VENV_PY = os.path.join(VENV, "bin", "python3")
 STAMP = os.path.join(VENV, ".requirements-stamp")
 LOG = os.path.join(ROOT, "setup-log.txt")
 REQUIREMENTS = os.path.join(HERE, "requirements.txt")
+NOT_SET_UP = 78
 MUST_IMPORT = ["cv2", "numpy", "mss", "pynput", "Quartz", "AppKit", "ApplicationServices", "Vision", "customtkinter"]
 
 
@@ -119,9 +122,10 @@ def platform_notes():
     ver = platform.mac_ver()[0]
     say(f"macOS {ver} detected.")
     say("")
-    say("The first run asks for three permissions, and they are granted to")
-    say("Terminal, not to the macro:")
+    say("The first run asks for three permissions:")
     say("    Accessibility, Input Monitoring, Screen Recording")
+    say("They go to what starts the macro: GPO Fishing Macro when you open the")
+    say("app, or Terminal when you use Launch.command.")
     say("")
     if ver.split(".")[0] in ("11", "12"):
         say("On macOS {} they are under:".format(ver.split(".")[0]))
@@ -130,24 +134,29 @@ def platform_notes():
     else:
         say("    System Settings > Privacy & Security")
     say("")
-    say("Tick Terminal in all three lists, then quit Terminal completely")
-    say("(Cmd-Q, not just closing the window) and run Launch.command again.")
+    say("Turn it on in all three lists, then quit it completely (F3 for the app,")
+    say("Cmd-Q for Terminal) and start the macro again.")
 
 
 def main():
+    args = sys.argv[1:]
+    no_install = "--no-install" in args
+    args = [a for a in args if a != "--no-install"]
     if os.path.exists(LOG):
         os.remove(LOG)
     if not tk_ok():
         say("This Python has no tkinter (the window toolkit).")
         say("Install Python from python.org; it ships with tkinter.")
         return 1
+    if no_install and not (os.path.exists(VENV_PY) and packages_ok()):
+        say("Setup is needed: run Setup.command.")
+        return NOT_SET_UP
     if not ensure_venv():
         return 1
     if not packages_ok() and not install_packages():
         return 1
     if os.path.exists(LOG):
         os.remove(LOG)
-    args = sys.argv[1:]
     script = "main.py"
     if args and args[0].endswith(".py"):
         script, args = args[0], args[1:]
