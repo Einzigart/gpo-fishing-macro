@@ -27,7 +27,6 @@ from screen_text import (
     SHOP_AREA,
     area_rect,
     disconnected_text,
-    is_dots,
     item_rect,
     read_count,
     read_item,
@@ -90,6 +89,13 @@ COMMON_BAIT = "Common Fish Bait"
 SHOP_STEP_WAIT_SEC = 4.0
 SHOP_POLL_SEC = 0.3
 SHOP_AFTER_SEC = 1.0
+# The seller's dialog darkens the game behind it. In the three shop fixtures
+# (screenshots of 2026-10-25, measured 2026-11-02) the deck read 39-65 grey
+# inside it and 108-139 just outside, about 0.45x. The dialog counts as open
+# while the band between its question and Yes/No is below this share of the
+# band's brightness before E. A scene that is dark already (night) may not dim
+# this much; then the dialog is left open and the run says so.
+SHOP_DIM_RATIO = 0.75
 # The "Fishing Baits" panel lists only the baits the player owns, one row each,
 # from the top. Measured on 2026-10-26 in 3-, 2- and 1-row screenshots of two
 # window sizes: rows centred across, the first at 74.1-74.2% down, each next
@@ -170,6 +176,19 @@ def grab(rect: PixelRect, sct) -> np.ndarray:
     if frame.shape[0] != rect.h or frame.shape[1] != rect.w:
         frame = cv2.resize(frame, (rect.w, rect.h), interpolation=cv2.INTER_AREA)
     return np.ascontiguousarray(frame)
+
+
+def _backdrop_band(rect: PixelRect, ask: dict) -> tuple[int, int, int, int]:
+    """The middle of the dialog backdrop, between the question and Yes/No, in `rect` pixels."""
+    (yes_x, yes_y), (no_x, _), (_, q_y) = ask["yes"][1], ask["no"][1], ask["question"][1]
+    gap = yes_y - q_y
+    return (yes_x - rect.x, int(q_y + 0.3 * gap) - rect.y, no_x - rect.x, int(q_y + 0.7 * gap) - rect.y)
+
+
+def _dimmed(image: np.ndarray, before: np.ndarray, band: tuple[int, int, int, int]) -> bool:
+    """Whether `band` is darker in `image` than in `before` by SHOP_DIM_RATIO."""
+    x0, y0, x1, y1 = band
+    return image[y0:y1, x0:x1].mean() < SHOP_DIM_RATIO * before[y0:y1, x0:x1].mean()
 
 
 def bait_selected(point: dict) -> bool | None:
@@ -356,28 +375,66 @@ class Fisher:
         self._select_bait()
         return True
 
+    def _shop_image(self) -> tuple[PixelRect, np.ndarray]:
+        """The seller's dialog area: its screen rect and a capture of it."""
+        rect = area_rect(SHOP_AREA, resolve_origin())
+        with _MSS() as sct:
+            return rect, grab(rect, sct)
+
+    def _shop_wait(self, read: Callable[[PixelRect, np.ndarray], object]) -> object:
+        """Capture the seller's dialog area until `read(rect, image)` is not None.
+
+        Returns that result, or None after SHOP_STEP_WAIT_SEC.
+        """
+        end = time.monotonic() + SHOP_STEP_WAIT_SEC
+        while not self.abort():
+            found = read(*self._shop_image())
+            if found is not None:
+                return found
+            if time.monotonic() >= end:
+                return None
+            sleep_interruptible(SHOP_POLL_SEC, self.abort)
+        return None
+
     def _shop_find(self, want: dict[str, Callable[[str], bool]]) -> dict[str, tuple[str, tuple[int, int]]] | None:
         """Wait until the seller's dialog shows a line for every test in `want`.
 
         Returns each match's text and screen centre, or None after SHOP_STEP_WAIT_SEC.
         """
-        end = time.monotonic() + SHOP_STEP_WAIT_SEC
-        while not self.abort():
-            rect = area_rect(SHOP_AREA, resolve_origin())
-            with _MSS() as sct:
-                lines = text_boxes(grab(rect, sct))
+        def read(rect: PixelRect, image: np.ndarray) -> dict | None:
+            lines = text_boxes(image)
             hits = {}
             for name, test in want.items():
                 for text, (x0, y0, x1, y1) in lines:
                     if test(text):
                         hits[name] = (text, (rect.x + (x0 + x1) // 2, rect.y + (y0 + y1) // 2))
                         break
-            if len(hits) == len(want):
-                return hits
-            if time.monotonic() >= end:
+            return hits if len(hits) == len(want) else None
+        return self._shop_wait(read)
+
+    def _close_shop(self, before: np.ndarray, ask: dict, box: tuple[int, int]) -> None:
+        """Click the "..." that ends the purchase once it shows, then check the dialog closed.
+
+        The "..." shows where the amount box was. Its text is not read: an
+        ability label behind it garbled the read into "Loaie" (2026-11-02),
+        and the labels differ per fruit. The dialog's dark backdrop tells that
+        it is still open, so the click never lands on the game behind it.
+        """
+        def dimmed(rect: PixelRect, image: np.ndarray) -> bool:
+            return _dimmed(image, before, _backdrop_band(rect, ask))
+
+        def dots_step(rect: PixelRect, image: np.ndarray) -> bool | None:
+            if not dimmed(rect, image):
                 return None
-            sleep_interruptible(SHOP_POLL_SEC, self.abort)
-        return None
+            buy_shown = any(t.strip().lower() == "buy" for t, _ in text_boxes(image))
+            return None if buy_shown else True
+
+        if self._shop_wait(dots_step) is None:
+            self.hooks.status("The closing '...' did not show; left the dialog as it is.")
+            return
+        click_at(*box)
+        if self._shop_wait(lambda rect, image: None if dimmed(rect, image) else True) is None:
+            self.hooks.status("Clicked the closing '...', but the seller's dialog stayed open.")
 
     def _buy_common(self) -> str | None:
         """Buy as much Common Fish Bait as the seller allows. Returns why it failed, or None.
@@ -387,6 +444,7 @@ class Fisher:
         """
         self.hooks.status(f"Buying {COMMON_BAIT}...")
         self._focus()
+        _, before = self._shop_image()
         hold = self.adv["key_hold_sec"]
         tap_key("e", hold_s=hold, should_abort=self.abort)
         # The question must be the Common Fish Bait seller's: E near another NPC
@@ -417,12 +475,7 @@ class Fisher:
         for digit in str(amount):
             tap_key(digit, hold_s=hold, should_abort=self.abort)
         click_at(*how["buy"][1])
-        done = self._shop_find({"dots": is_dots})
-        if done is None:
-            # Never click blindly here: the "..." sits over the Logia ability button.
-            self.hooks.status("The closing '...' did not show; left the dialog as it is.")
-        else:
-            click_at(*done["dots"][1])
+        self._close_shop(before, ask, box)
         sleep_interruptible(SHOP_AFTER_SEC, self.abort)
         return None
 

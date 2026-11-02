@@ -91,8 +91,6 @@ NAME_MATCH = 0.9
 # screenshots: its text and buttons sat at 25-75% across and 75-93% down.
 SHOP_AREA = (0.25, 0.62, 0.75, 0.99)
 _MAX = re.compile(r"MAX\s*[:;.]?\s*([0-9SsGЗзЦцOoIl]{1,3})(?![0-9A-Za-z])", re.IGNORECASE)
-# The "..." button that closes the dialog read as ".••" (2026-10-25).
-_DOTS = re.compile(r"^[.·•…]{2,}$")
 
 # Roblox's "Disconnected" dialog ("Error Code: 277", "Leave", "Reconnect") sits
 # in the window centre: 37-63% across and down in the user's screenshot
@@ -255,10 +253,6 @@ def shop_max(text: str) -> int | None:
     """The number in "How many do you want? MAX: n", or None."""
     m = _MAX.search(text)
     return int(m.group(1).translate(_DIGIT_LOOKALIKES)) if m else None
-
-
-def is_dots(text: str) -> bool:
-    return bool(_DOTS.match(text.replace(" ", "")))
 
 
 def disconnected_text(image: np.ndarray) -> str | None:
