@@ -1,10 +1,15 @@
-# GPO Fishing Macro (macOS)
+# GPO Fishing Macro (macOS and Windows)
 
-A fishing macro for Grand Piece Online on macOS. It only reads the screen and
-sends normal mouse clicks and key presses. It does not inject code into Roblox
-or read game memory.
+A fishing macro for Grand Piece Online on macOS and Windows. It only reads the
+screen and sends normal mouse clicks and key presses. It does not inject code
+into Roblox or read game memory.
 
-## Setup
+The Windows version is new and has not been tested on a Windows PC yet. Its
+text reading uses Windows OCR, not Apple's Vision, so bait counts and catch
+names may read differently. Run **Test detection** first and send `run-log.txt`
+if the counts or names come out wrong.
+
+## Setup on macOS
 
 1. Install Python 3.12 from python.org if `Setup.command` says no Python is usable.
 2. Double-click `Setup.command`. It builds a private `.venv`, installs the packages,
@@ -23,6 +28,28 @@ and writes the details to `app-log.txt`.
 
 `Launch.command` still works and starts the macro from Terminal. Permissions are
 granted per app, so that way needs them for Terminal instead.
+
+## Setup on Windows
+
+1. Install Python 3.12 from python.org (the "Windows installer (64-bit)"). In the
+   installer, tick "Add python.exe to PATH" and keep "py launcher" and "tcl/tk" on.
+2. Double-click `Setup.bat`. It builds a private `.venv`, installs the packages, and
+   makes a `GPO Fishing Macro` shortcut with the fish icon in this folder.
+3. Double-click the `GPO Fishing Macro` shortcut. No console window opens. To start
+   it from the desktop or Start, copy the shortcut there or pin it to Start.
+
+Windows needs no permissions for the macro. Two things can still block it:
+
+- Run Roblox normally, not as administrator. Windows blocks clicks and key presses
+  from a normal program into a program that runs as administrator.
+- The macro reads text with Windows OCR, which needs the English (United States)
+  language under Settings > Time & language > Language & region. Most Windows PCs
+  have it. If not, the run stops and says so.
+
+If setup is missing or the packages changed, the shortcut offers to run
+`Setup.bat`. If the macro ends with an error, it shows a dialog and writes the
+details to `app-log.txt`. `Launch.bat` starts the macro with a console window, so
+you can see its output. `Diagnose.bat` writes `diagnose-log.txt` for bug reports.
 
 ## First run
 
@@ -92,16 +119,32 @@ fish or item. A catch whose name could not be read is saved as "(name not read)"
 - `config.json` holds your settings. Delete it to go back to the defaults.
 - `catches.csv` holds every catch (time, name, rarity). Delete it to start a new history.
 - `run-log.txt` holds the run log. Send it with `diagnose-log.txt` (from
-  `Diagnose.command`) when you report a problem.
-- `app-log.txt` holds the output of the last start from the app, including errors.
-- `assets/app-icon.svg` is the source of the app icon,
-  `GPO Fishing Macro.app/Contents/Resources/AppIcon.icns`.
+  `Diagnose.command` or `Diagnose.bat`) when you report a problem.
+- `app-log.txt` holds the output of the last start from the app or the Windows
+  shortcut, including errors.
+- `assets/app-icon.svg` is the source of the app icon. The macOS app uses
+  `GPO Fishing Macro.app/Contents/Resources/AppIcon.icns`; the Windows shortcut
+  uses `assets/app-icon.ico`.
+
+The code that differs per system sits in pairs: `focus_mac.py` and
+`focus_win.py` (find and focus the Roblox window), `input_mac.py` and
+`input_win.py` (mouse and keys), `ocr_mac.py` and `ocr_win.py` (text recognition).
+Screen capture uses CoreGraphics on macOS (`mac_grab.py`) and mss on Windows.
 
 ## Tests
 
 ```bash
 .venv/bin/python -m unittest discover tests
 ```
+
+On Windows:
+
+```bat
+.venv\Scripts\python -m unittest discover tests
+```
+
+The text-reading tests on the screenshots in `tests/fixtures` were tuned with
+Vision. On Windows they show how well Windows OCR reads the same pictures.
 
 Lint with ruff (its default rules, at the 120-column width in `ruff.toml`):
 

@@ -1,4 +1,4 @@
-"""GPO Fishing Macro: the app window (CustomTkinter) for the macOS fishing macro.
+"""GPO Fishing Macro: the app window (CustomTkinter) for the fishing macro (macOS and Windows).
 
 The window only edits settings and shows state. The fishing itself runs in
 fishing.Fisher on a worker thread; its callbacks reach Tk through a queue
@@ -11,6 +11,7 @@ import os
 import platform
 import queue
 import subprocess
+import sys
 import threading
 import time
 import tkinter as tk
@@ -111,7 +112,8 @@ class App(ctk.CTk):
         platform_keys.add_hotkey("F3", lambda: self._post(self._on_close))
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self.after(15, self._pump)
-        self.after(400, self._check_permissions)
+        if sys.platform == "darwin":  # Windows needs no permission for screen reading or input
+            self.after(400, self._check_permissions)
         self._set_status("Equip your rod in GPO, then start fishing.")
 
     # ---------- widgets ----------

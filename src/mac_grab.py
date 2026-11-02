@@ -1,7 +1,13 @@
+"""Capture the Roblox window through CoreGraphics on macOS, even behind other windows.
+
+grab() returns None when this does not work, and on other systems; the caller
+then captures the screen with mss (on Windows that is the only capture).
+"""
 from __future__ import annotations
 
 import ctypes
 import ctypes.util
+import sys
 import threading
 import time
 from ctypes import Structure, c_double, c_int32, c_long, c_size_t, c_ubyte, c_uint32, c_void_p
@@ -106,6 +112,8 @@ _window = [0.0, None]
 
 def _load() -> _Lib | None:
     global _lib, _lib_failed
+    if sys.platform != "darwin":
+        return None
     if _lib is None and not _lib_failed:
         with _lock:
             if _lib is None and not _lib_failed:

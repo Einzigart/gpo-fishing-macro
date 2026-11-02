@@ -1,7 +1,8 @@
 """Build the private .venv, install requirements once, then run the app.
 
 Usage: python bootstrap.py main.py [--check] [--no-install]
---check installs and prints the macOS permission notes without starting the app.
+--check installs without starting the app, then prints the macOS permission
+notes, or on Windows makes the "GPO Fishing Macro" shortcut.
 --no-install exits with NOT_SET_UP instead of building .venv or installing
 packages. The .app uses it: it has no window to show a long install in.
 """
@@ -14,13 +15,21 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
+WINDOWS = sys.platform == "win32"
 VENV = os.path.join(ROOT, ".venv")
-VENV_PY = os.path.join(VENV, "bin", "python3")
+VENV_PY = os.path.join(VENV, "Scripts", "python.exe") if WINDOWS else os.path.join(VENV, "bin", "python3")
+# The console-free interpreter the Windows shortcut starts.
+VENV_PYW = os.path.join(VENV, "Scripts", "pythonw.exe")
+SETUP = "Setup.bat" if WINDOWS else "Setup.command"
+SHORTCUT = os.path.join(ROOT, "GPO Fishing Macro.lnk")
+ICON = os.path.join(ROOT, "assets", "app-icon.ico")
 STAMP = os.path.join(VENV, ".requirements-stamp")
 LOG = os.path.join(ROOT, "setup-log.txt")
 REQUIREMENTS = os.path.join(HERE, "requirements.txt")
 NOT_SET_UP = 78
-MUST_IMPORT = ["cv2", "numpy", "mss", "pynput", "Quartz", "AppKit", "ApplicationServices", "Vision", "customtkinter"]
+MUST_IMPORT = ["cv2", "numpy", "mss", "pynput", "customtkinter"] + (
+    ["winrt.windows.media.ocr", "winrt.windows.graphics.imaging", "winrt.windows.storage.streams",
+     "winrt.windows.globalization"] if WINDOWS else ["Quartz", "AppKit", "ApplicationServices", "Vision"])
 
 
 def say(msg):
@@ -61,11 +70,11 @@ def tk_ok():
 def explain_failure():
     v = sys.version_info
     say("")
-    say("Install failed. The full output is in setup-log.txt next to Launch.command.")
-    say(f"Python {v.major}.{v.minor}.{v.micro} at {sys.executable} on macOS {platform.mac_ver()[0]}"
-        f" ({platform.machine()})")
+    say(f"Install failed. The full output is in setup-log.txt next to {SETUP}.")
+    system = f"Windows {platform.version()}" if WINDOWS else f"macOS {platform.mac_ver()[0]}"
+    say(f"Python {v.major}.{v.minor}.{v.micro} at {sys.executable} on {system} ({platform.machine()})")
     say("")
-    if v >= (3, 13):
+    if v >= (3, 13) and not WINDOWS:
         say(f"* This is Python {v.major}.{v.minor}. Older Macs (macOS 11 on Intel especially) have")
         say("  no package builds for 3.13+. Install Python 3.12 from")
         say("      https://www.python.org/downloads/release/python-3128/")
@@ -73,7 +82,7 @@ def explain_failure():
     say("* If the log ends in a download or SSL error, that one really is the")
     say("  connection, a proxy, or a firewall.")
     say("")
-    say("Run Setup.command to try again; send setup-log.txt if it still fails.")
+    say(f"Run {SETUP} to try again; send setup-log.txt if it still fails.")
 
 
 def ensure_venv():
@@ -82,7 +91,7 @@ def ensure_venv():
     say("Building a private Python environment in .venv (one-time, ~20s)...")
     code = run_logged([sys.executable, "-m", "venv", VENV])
     if code != 0 or not os.path.exists(VENV_PY):
-        say("Could not create .venv. See setup-log.txt next to Launch.command.")
+        say(f"Could not create .venv. See setup-log.txt next to {SETUP}.")
         return False
     return True
 
@@ -118,7 +127,40 @@ def install_packages():
     return True
 
 
+def make_shortcut():
+    """Make "GPO Fishing Macro.lnk" next to Setup.bat: the macro with the fish icon and no console."""
+    # Paths go in through the environment, so no quoting can break the command.
+    script = ("$s = (New-Object -ComObject WScript.Shell).CreateShortcut($env:GPO_LNK); "
+              "$s.TargetPath = $env:GPO_PYW; "
+              "$s.Arguments = '\"' + $env:GPO_LAUNCH + '\"'; "
+              "$s.WorkingDirectory = $env:GPO_ROOT; "
+              "$s.IconLocation = $env:GPO_ICON; "
+              "$s.Description = 'GPO Fishing Macro'; "
+              "$s.Save()")
+    env = dict(os.environ, GPO_LNK=SHORTCUT, GPO_PYW=VENV_PYW, GPO_LAUNCH=os.path.join(HERE, "launch_win.py"),
+               GPO_ROOT=ROOT, GPO_ICON=ICON)
+    code = subprocess.call(["powershell", "-NoProfile", "-NonInteractive", "-Command", script], cwd=ROOT, env=env)
+    return code == 0 and os.path.exists(SHORTCUT)
+
+
+def windows_notes():
+    say(f"Windows {platform.version()} detected.")
+    say("")
+    if make_shortcut():
+        say("Made the shortcut 'GPO Fishing Macro' in this folder. Double-click it to")
+        say("start the macro. To start it from the desktop or Start, right-click it and")
+        say("copy it there, or pin it to Start.")
+    else:
+        say("Could not make the 'GPO Fishing Macro' shortcut; use Launch.bat instead.")
+    say("")
+    say("Windows needs no permissions for the macro. Run Roblox normally, not as")
+    say("administrator, or Windows blocks the macro's clicks and key presses.")
+
+
 def platform_notes():
+    if WINDOWS:
+        windows_notes()
+        return
     ver = platform.mac_ver()[0]
     say(f"macOS {ver} detected.")
     say("")
@@ -149,7 +191,7 @@ def main():
         say("Install Python from python.org; it ships with tkinter.")
         return 1
     if no_install and not (os.path.exists(VENV_PY) and packages_ok()):
-        say("Setup is needed: run Setup.command.")
+        say(f"Setup is needed: run {SETUP}.")
         return NOT_SET_UP
     if not ensure_venv():
         return 1

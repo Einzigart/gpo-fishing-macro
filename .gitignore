@@ -7,3 +7,6 @@ config.tmp
 no-bite-snapshots/
 .ruff_cache/
 catches.csv
+
+# Made per PC by Setup.bat
+GPO Fishing Macro.lnk
