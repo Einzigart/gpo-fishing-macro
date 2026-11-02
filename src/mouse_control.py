@@ -1,23 +1,18 @@
-"""Synthetic left-mouse input through Quartz events (macOS)."""
+"""Synthetic left-mouse input: clicks with a cursor wiggle, and a held button."""
 from __future__ import annotations
 
 import random
+import sys
 import time
 
-from Quartz import (
-    CGEventCreate,
-    CGEventCreateMouseEvent,
-    CGEventGetLocation,
-    CGEventPost,
-    CGEventSetIntegerValueField,
-    kCGEventLeftMouseDown,
-    kCGEventLeftMouseDragged,
-    kCGEventLeftMouseUp,
-    kCGEventMouseMoved,
-    kCGHIDEventTap,
-    kCGMouseButtonLeft,
-    kCGMouseEventClickState,
-)
+if sys.platform == "win32":
+    from input_win import left_down as _raw_down
+    from input_win import left_up as _raw_up
+    from input_win import mouse_move
+else:
+    from input_mac import left_down as _raw_down
+    from input_mac import left_up as _raw_up
+    from input_mac import mouse_move
 
 # Roblox ignores a click when the cursor teleports onto the target, so the
 # cursor wiggles first. Values carried over from the Slayers 2 macro.
@@ -29,33 +24,19 @@ _PRESS_SEC = 0.06
 _down = False
 
 
-def _cursor_pos() -> tuple[float, float]:
-    loc = CGEventGetLocation(CGEventCreate(None))
-    return float(loc.x), float(loc.y)
-
-
-def _post(kind, x: float, y: float) -> None:
-    ev = CGEventCreateMouseEvent(None, kind, (float(x), float(y)), kCGMouseButtonLeft)
-    if kind in (kCGEventLeftMouseDown, kCGEventLeftMouseUp):
-        CGEventSetIntegerValueField(ev, kCGMouseEventClickState, 1)
-    CGEventPost(kCGHIDEventTap, ev)
-
-
 def _move(x: float, y: float) -> None:
-    _post(kCGEventLeftMouseDragged if _down else kCGEventMouseMoved, x, y)
+    mouse_move(x, y, _down)
 
 
 def _left_down() -> None:
     global _down
-    x, y = _cursor_pos()
-    _post(kCGEventLeftMouseDown, x, y)
+    _raw_down()
     _down = True
 
 
 def _left_up() -> None:
     global _down
-    x, y = _cursor_pos()
-    _post(kCGEventLeftMouseUp, x, y)
+    _raw_up()
     _down = False
 
 

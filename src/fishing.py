@@ -5,6 +5,7 @@ The loop runs on a worker thread and talks to the UI only through `Hooks`.
 """
 from __future__ import annotations
 
+import sys
 import time
 from collections import Counter
 from collections.abc import Callable
@@ -448,7 +449,8 @@ class Fisher:
             sleep_interruptible(0.15, self.abort)
         if not roblox_running():
             raise StopRun("Roblox isn't running. Open GPO first.")
-        raise StopRun("Could not bring the Roblox window to the front. If it is minimized, open it from the Dock.")
+        raise StopRun("Could not bring the Roblox window to the front. If it is minimized, open it from the "
+                      + ("taskbar." if sys.platform == "win32" else "Dock."))
 
     def _cast(self) -> None:
         self.hooks.status("Casting...")
@@ -503,8 +505,9 @@ class Fisher:
                 return 0, "not in the Fishing Baits panel"
             try:
                 count, row = read_bait_count(spot)
-            except RuntimeError as exc:
+            except (RuntimeError, OSError) as exc:
                 # One failed text recognition is a bad read, not the end of the run.
+                # (Vision fails with RuntimeError, Windows OCR with OSError.)
                 why = str(exc)
                 continue
             found = row_bait(row, list(BAIT_TYPES)) if row else None
@@ -548,7 +551,7 @@ class Fisher:
                     break
                 try:
                     _, row = read_bait_count(row_spot(k))
-                except RuntimeError:
+                except (RuntimeError, OSError):
                     continue  # one failed text recognition; try the row again
                 name = row_bait(row, list(BAIT_TYPES)) if row else None
                 if name is not None:

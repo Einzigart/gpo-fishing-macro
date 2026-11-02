@@ -1,4 +1,7 @@
-"""Read game text with Apple's Vision text recognition.
+"""Read game text with the system text recognition.
+
+The recognition itself is per platform: Apple's Vision on macOS (ocr_mac),
+Windows OCR on Windows (ocr_win). This module turns its lines into game facts.
 
 Two things are read:
 * Bait left, from the Fishing Baits panel rows like "Common Fish Bait x296".
@@ -12,16 +15,16 @@ from __future__ import annotations
 
 import difflib
 import re
+import sys
 from typing import NamedTuple
 
 import cv2
 import numpy as np
-import objc
 
-# Bound at import: PyObjC's lazy first load is not thread-safe (see win_focus).
-from Foundation import NSData, NSDictionary, NSMakeRange
-from Vision import VNImageRequestHandler, VNRecognizeTextRequest, VNRequestTextRecognitionLevelAccurate
-
+if sys.platform == "win32":
+    from ocr_win import recognize
+else:
+    from ocr_mac import recognize
 from roblox_geo import CoordOrigin, PixelRect, rect_to_screen
 
 # Strip around the picked spot, as fractions of the window. Measured on
@@ -42,11 +45,9 @@ _DIGIT_LOOKALIKES = str.maketrans({"S": "5", "s": "5", "G": "6", "З": "3", "з"
 _DIGIT = "[0-9SsGЗзЦцOoIl]"
 # One space may split the digits ("x29 6"): without it, that read gave 29.
 _COUNT = re.compile(rf"[xX×хХ]\s*({_DIGIT}(?: ?{_DIGIT}){{0,2}})(?![0-9A-Za-z])")
-# NOT SEEN YET: a read that drops the x. Then only real digits count, and
+# NOT SEEN YET: a read that drops the x (Vision), or splits it off (Windows OCR). Then only real digits count, and
 # only at the end of the name ("Common Fish Bait 296") or as a line alone.
 _BARE_COUNT = re.compile(r"(?:(?<=[BbT8]a[il1]t)|^)\s*([0-9](?: ?[0-9]){0,2})\s*$")
-# Vision's next-best readings of a line, tried when the best one has no count.
-TEXT_CANDIDATES = 3
 
 # The selected bait row has a gold frame. Measured on 2026-10-30 on 8 row
 # strips: selected rows had 208-572 gold pixels both above and below the text;
@@ -140,59 +141,20 @@ Box = tuple[int, int, int, int]  # x0, y0, x1, y1 in image pixels
 
 class Line(NamedTuple):
     dist: float  # distance of the line's centre from the image centre, as a fraction of the height
-    text: str  # Vision's best reading
+    text: str  # the best reading
     name_box: Box | None  # box of the item name when the line is a "New Item" banner
     box: Box
-    alts: tuple[str, ...]  # Vision's next-best readings, best first
+    alts: tuple[str, ...]  # next-best readings, best first (Vision only)
+
+
+def _item_span(text: str) -> tuple[int, int] | None:
+    m = _ITEM.search(text)
+    return (m.start(1), m.end(1)) if m and m.group(1) else None
 
 
 def _lines(image: np.ndarray) -> list[Line]:
-    """Each text line Vision finds in the image.
-
-    Vision can only give a substring's box while its results are alive, so
-    the item name box is found here.
-    """
-    # No upscaling: on 2026-10-24 the panel strip read correctly at 0.5x, 0.75x
-    # and 1x, but not at 1.2x or 2x.
-    ok, png = cv2.imencode(".png", image)
-    if not ok:
-        raise RuntimeError("could not encode the image for text recognition")
-    raw = png.tobytes()
-    H, W = image.shape[:2]
-    out = []
-    with objc.autorelease_pool():
-        data = NSData.dataWithBytes_length_(raw, len(raw))
-        # A Python {} raises "key does not exist" with pyobjc 12 on macOS 27.
-        handler = VNImageRequestHandler.alloc().initWithData_options_(data, NSDictionary.dictionary())
-        req = VNRecognizeTextRequest.alloc().init()
-        req.setRecognitionLevel_(VNRequestTextRecognitionLevelAccurate)
-        req.setUsesLanguageCorrection_(False)
-        # English only: with the default, digits came back as Cyrillic letters.
-        req.setRecognitionLanguages_(["en-US"])
-        ok = handler.performRequests_error_([req], None)
-        if not (ok[0] if isinstance(ok, tuple) else ok):
-            raise RuntimeError("macOS text recognition failed")
-        for obs in req.results() or []:
-            top = obs.topCandidates_(TEXT_CANDIDATES)
-            if not top:
-                continue
-            text = str(top[0].string())
-            alts = tuple(str(c.string()) for c in list(top)[1:])
-            box = obs.boundingBox()  # normalised, origin at the bottom left
-            centre = box.origin.y + box.size.height / 2
-            line_box = (int(box.origin.x * W), int((1 - box.origin.y - box.size.height) * H),
-                        int((box.origin.x + box.size.width) * W), int((1 - box.origin.y) * H))
-            name_box = None
-            m = _ITEM.search(text)
-            if m and m.group(1):
-                sub, _ = top[0].boundingBoxForRange_error_(
-                    NSMakeRange(m.start(1), m.end(1) - m.start(1)), None)
-                if sub is not None:
-                    b = sub.boundingBox()  # normalised, origin at the bottom left
-                    name_box = (int(b.origin.x * W), int((1 - b.origin.y - b.size.height) * H),
-                                int((b.origin.x + b.size.width) * W), int((1 - b.origin.y) * H))
-            out.append(Line(abs(centre - 0.5), text, name_box, line_box, alts))
-    return out
+    """Each text line the system recognition finds in the image."""
+    return [Line(*raw) for raw in recognize(image, _item_span)]
 
 
 def parse_count(text: str) -> int | None:
