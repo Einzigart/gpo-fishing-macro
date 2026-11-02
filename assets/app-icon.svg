@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="sea" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3aa6ff"/>
+      <stop offset="0.55" stop-color="#1667d1"/>
+      <stop offset="1" stop-color="#0a2f73"/>
+    </linearGradient>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffd25a"/>
+      <stop offset="0.5" stop-color="#ffa21f"/>
+      <stop offset="1" stop-color="#f06a12"/>
+    </linearGradient>
+    <linearGradient id="fin" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffb43a"/>
+      <stop offset="1" stop-color="#e2550c"/>
+    </linearGradient>
+    <linearGradient id="shine" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="ray" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="1"/>
+      <stop offset="0.75" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <clipPath id="tile"><rect x="100" y="100" width="824" height="824" rx="185"/></clipPath>
+    <clipPath id="fishbody">
+      <path d="M 300 540 C 380 405, 600 380, 730 520 C 600 668, 380 668, 300 540 Z"/>
+    </clipPath>
+    <filter id="drop" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#000" flood-opacity="0.35"/>
+    </filter>
+    <filter id="fishshadow" x="-20%" y="-20%" width="140%" height="160%">
+      <feDropShadow dx="0" dy="14" stdDeviation="12" flood-color="#021a45" flood-opacity="0.45"/>
+    </filter>
+  </defs>
+
+  <!-- tile -->
+  <g filter="url(#drop)">
+    <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#sea)"/>
+  </g>
+
+  <g clip-path="url(#tile)">
+    <!-- light rays -->
+    <path d="M 380 100 L 470 100 L 300 924 L 170 924 Z" fill="url(#ray)" opacity="0.09"/>
+    <path d="M 600 100 L 650 100 L 560 924 L 470 924 Z" fill="url(#ray)" opacity="0.08"/>
+    <!-- waves at the bottom -->
+    <path d="M 100 790 C 200 750, 300 830, 420 790 C 540 750, 640 830, 760 790 C 850 760, 900 790, 924 800 L 924 924 L 100 924 Z"
+          fill="#0b3f93" opacity="0.85"/>
+    <path d="M 100 850 C 220 815, 330 885, 460 850 C 590 815, 700 885, 830 850 C 880 838, 910 845, 924 852 L 924 924 L 100 924 Z"
+          fill="#072a66"/>
+    <!-- bubbles -->
+    <circle cx="760" cy="300" r="26" fill="none" stroke="#fff" stroke-opacity="0.75" stroke-width="9"/>
+    <circle cx="815" cy="215" r="16" fill="none" stroke="#fff" stroke-opacity="0.6" stroke-width="7"/>
+    <circle cx="720" cy="205" r="10" fill="#fff" fill-opacity="0.55"/>
+    <!-- fishing line and hook -->
+    <line x1="292" y1="90" x2="292" y2="452" stroke="#e8f3ff" stroke-width="7" stroke-linecap="round" opacity="0.9"/>
+    <path d="M 292 452 L 292 500 A 34 34 0 0 1 224 500 L 224 486"
+          fill="none" stroke="#d9e2ec" stroke-width="12" stroke-linecap="round"/>
+    <path d="M 218 490 L 224 456 L 230 490 Z" fill="#d9e2ec"/>
+    <path d="M 226 470 L 242 486 L 229 488 Z" fill="#d9e2ec"/>
+    <circle cx="292" cy="448" r="9" fill="#d9e2ec"/>
+  </g>
+
+  <!-- fish -->
+  <g filter="url(#fishshadow)">
+    <!-- dorsal fin -->
+    <path d="M 445 438 C 470 340, 580 330, 640 450 Z" fill="url(#fin)"/>
+    <!-- tail -->
+    <path d="M 712 520 C 760 470, 800 420, 842 392 C 818 460, 818 580, 842 648 C 800 620, 760 570, 712 520 Z" fill="url(#fin)"/>
+    <!-- belly fin -->
+    <path d="M 500 628 C 520 690, 590 700, 620 640 Z" fill="url(#fin)"/>
+    <!-- body -->
+    <path d="M 300 540 C 380 405, 600 380, 730 520 C 600 668, 380 668, 300 540 Z" fill="url(#body)"/>
+  </g>
+  <g clip-path="url(#fishbody)">
+    <!-- scales -->
+    <g fill="none" stroke="#c94f0a" stroke-opacity="0.35" stroke-width="6" stroke-linecap="round">
+      <path d="M 500 470 a 30 30 0 0 1 0 60"/><path d="M 560 470 a 30 30 0 0 1 0 60"/><path d="M 620 470 a 30 30 0 0 1 0 60"/>
+      <path d="M 530 530 a 30 30 0 0 1 0 60"/><path d="M 590 530 a 30 30 0 0 1 0 60"/><path d="M 650 530 a 30 30 0 0 1 0 60"/>
+      <path d="M 500 590 a 30 30 0 0 1 0 60"/><path d="M 560 590 a 30 30 0 0 1 0 60"/>
+    </g>
+    <!-- shine on the back -->
+    <ellipse cx="500" cy="455" rx="190" ry="55" fill="url(#shine)"/>
+  </g>
+  <!-- gill -->
+  <path d="M 432 470 C 460 510, 460 570, 432 612" fill="none" stroke="#c94f0a" stroke-width="10" stroke-linecap="round" opacity="0.6"/>
+  <!-- side fin -->
+  <path d="M 470 560 C 500 540, 545 545, 560 575 C 530 590, 495 588, 470 560 Z" fill="#ffcf6a" opacity="0.9"/>
+  <!-- eye -->
+  <circle cx="368" cy="512" r="30" fill="#fff"/>
+  <circle cx="361" cy="510" r="16" fill="#1b2433"/>
+  <circle cx="355" cy="503" r="6" fill="#fff"/>
+  <!-- mouth -->
+  <path d="M 304 548 C 318 556, 330 556, 342 550" fill="none" stroke="#a8400a" stroke-width="7" stroke-linecap="round"/>
+</svg>

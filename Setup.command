@@ -3,6 +3,8 @@ cd "$(dirname "$0")" || exit 1
 
 xattr -d -r com.apple.quarantine . >/dev/null 2>&1
 chmod +x ./*.command src/*.sh "GPO Fishing Macro.app/Contents/MacOS/launch" >/dev/null 2>&1
+# Finder caches app icons; a new date on the bundle makes it show the fish icon.
+touch "GPO Fishing Macro.app" >/dev/null 2>&1
 
 source src/find_python.sh || { echo ""; read -n 1 -s -r -p "  press any key to close"; exit 1; }
 

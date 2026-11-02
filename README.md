@@ -94,6 +94,8 @@ fish or item. A catch whose name could not be read is saved as "(name not read)"
 - `run-log.txt` holds the run log. Send it with `diagnose-log.txt` (from
   `Diagnose.command`) when you report a problem.
 - `app-log.txt` holds the output of the last start from the app, including errors.
+- `assets/app-icon.svg` is the source of the app icon,
+  `GPO Fishing Macro.app/Contents/Resources/AppIcon.icns`.
 
 ## Tests
 

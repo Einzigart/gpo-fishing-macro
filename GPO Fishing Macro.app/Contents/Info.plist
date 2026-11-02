@@ -8,6 +8,8 @@
 	<string>GPO Fishing Macro</string>
 	<key>CFBundleExecutable</key>
 	<string>launch</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>io.github.einzigart.gpo-fishing-macro</string>
 	<key>CFBundleInfoDictionaryVersion</key>
