@@ -131,6 +131,14 @@ The code that differs per system sits in pairs: `focus_mac.py` and
 `input_win.py` (mouse and keys), `ocr_mac.py` and `ocr_win.py` (text recognition).
 Screen capture uses CoreGraphics on macOS (`mac_grab.py`) and mss on Windows.
 
+## Releases
+
+Each release on GitHub has a macOS zip and a Windows zip, built from the
+committed files by `scripts/make_release.sh`. To publish one, open the Actions
+tab, pick **Release**, click **Run workflow**, and enter a version such as
+`v1.1.0`. Pushing a tag that starts with `v` does the same. The download steps
+shown on the release page come from `.github/release-notes.md`.
+
 ## Tests
 
 ```bash
