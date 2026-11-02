@@ -6,6 +6,7 @@ The loop runs on a worker thread and talks to the UI only through `Hooks`.
 from __future__ import annotations
 
 import time
+from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -68,10 +69,19 @@ RELEASE_WHEN_LOST_SEC = 0.3
 # NOT MEASURED YET: the banner was still up in both after-catch screenshots.
 ITEM_LOOK_SEC = 2.0
 ITEM_LOOK_GAP_SEC = 0.25
-# Bait count reads: tries per read and the gap between them.
+# Bait count reads: tries per read and the gap between them. A read that
+# agrees at once stops early, so more tries cost time only on bad reads.
 # NOT MEASURED YET: the count text may animate for a moment after it changes.
-COUNT_READ_TRIES = 3
+COUNT_READ_TRIES = 5
 COUNT_READ_GAP_SEC = 0.4
+# Tries per panel row when mapping the rows by name. The scan ends at the
+# first row that never reads, so each try there costs a full read.
+SCAN_READ_TRIES = 3
+# Equal reads needed before a count is trusted. A count at or below
+# KEEP_LAST_BAIT ends the bait (switch, or anti-AFK idle when it is the last
+# one), so a wrong low read does the most harm and needs more reads.
+COUNT_AGREE = 2
+LOW_COUNT_AGREE = 3
 # Auto-buy: only Common Fish Bait is sold by an NPC (wiki, 2026-10-24).
 COMMON_BAIT = "Common Fish Bait"
 # NOT MEASURED YET: how fast each step of the seller's dialog appears, and how
@@ -203,6 +213,18 @@ def check_ready(cfg: dict) -> str | None:
 
 def _has_stock(bait: dict) -> bool:
     return bait["use"] and (bait["count"] is None or bait["count"] > KEEP_LAST_BAIT)
+
+
+def reads_needed(count: int, expect: set[int] | None) -> int:
+    """How many equal reads of `count` make it trusted.
+
+    An expected count needs one read, or two when it ends the bait. Any
+    other count needs COUNT_AGREE, or LOW_COUNT_AGREE when it ends the bait.
+    """
+    low = count <= KEEP_LAST_BAIT
+    if expect is not None and count in expect:
+        return 2 if low else 1
+    return LOW_COUNT_AGREE if low else COUNT_AGREE
 
 
 class Fisher:
@@ -465,12 +487,12 @@ class Fisher:
     def _read_count(self, bait: dict, expect: set[int] | None) -> tuple[int | None, str]:
         """Read a bait count from the panel, retrying until it can be trusted.
 
-        A read is trusted when it is in `expect`, or when two reads agree. The
-        count text can be caught mid-animation or misread, so a single odd read
-        is not taken (2026-10-24: misreads drifted the count to 1 while the game
-        still had 4).
+        A count is trusted after `reads_needed` equal reads. The count text can
+        be caught mid-animation or misread, so a single odd read is not taken
+        (2026-10-24: misreads drifted the count to 1 while the game still had 4).
         """
-        seen: list[int] = []
+        reads: list[int] = []
+        seen: Counter[int] = Counter()
         why = "not read"
         rescanned = False
         for attempt in range(COUNT_READ_TRIES):
@@ -479,7 +501,12 @@ class Fisher:
             spot = self._spot(bait)
             if spot is None:
                 return 0, "not in the Fishing Baits panel"
-            count, row = read_bait_count(spot)
+            try:
+                count, row = read_bait_count(spot)
+            except RuntimeError as exc:
+                # One failed text recognition is a bad read, not the end of the run.
+                why = str(exc)
+                continue
             found = row_bait(row, list(BAIT_TYPES)) if row else None
             if (found is not None and found != bait["name"]) or not row:
                 # Another bait or nothing at this row: the rows may have moved
@@ -494,10 +521,11 @@ class Fisher:
                 why = (f"read {count}, more than the game maximum of {BAIT_MAX} ({row!r})" if count
                        else f"no bait count in {row!r}" if row else "no text at the bait's row")
                 continue
-            if (expect is not None and count in expect) or count in seen:
+            reads.append(count)
+            seen[count] += 1
+            if seen[count] >= reads_needed(count, expect):
                 return count, row
-            seen.append(count)
-            why = f"reads did not agree ({', '.join(map(str, seen))})"
+            why = f"reads did not agree enough ({', '.join(map(str, reads))})"
         return None, why
 
     def _spot(self, bait: dict) -> dict | None:
@@ -515,10 +543,13 @@ class Fisher:
         rows: dict[str, int] = {}
         for k in range(len(BAIT_TYPES)):
             name = None
-            for attempt in range(COUNT_READ_TRIES):
+            for attempt in range(SCAN_READ_TRIES):
                 if attempt and sleep_interruptible(COUNT_READ_GAP_SEC, self.abort):
                     break
-                _, row = read_bait_count(row_spot(k))
+                try:
+                    _, row = read_bait_count(row_spot(k))
+                except RuntimeError:
+                    continue  # one failed text recognition; try the row again
                 name = row_bait(row, list(BAIT_TYPES)) if row else None
                 if name is not None:
                     break

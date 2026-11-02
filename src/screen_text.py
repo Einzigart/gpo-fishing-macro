@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import difflib
 import re
+from typing import NamedTuple
 
 import cv2
 import numpy as np
@@ -38,7 +39,14 @@ ROW_REACH = 0.25
 # "×S" for x5 (Х is Cyrillic). The count must be 1-3 characters after the x.
 _DIGIT_LOOKALIKES = str.maketrans({"S": "5", "s": "5", "G": "6", "З": "3", "з": "3",
                                    "Ц": "4", "ц": "4", "O": "0", "o": "0", "I": "1", "l": "1"})
-_COUNT = re.compile(r"[xX×хХ]\s*([0-9SsGЗзЦцOoIl]{1,3})(?![0-9A-Za-z])")
+_DIGIT = "[0-9SsGЗзЦцOoIl]"
+# One space may split the digits ("x29 6"): without it, that read gave 29.
+_COUNT = re.compile(rf"[xX×хХ]\s*({_DIGIT}(?: ?{_DIGIT}){{0,2}})(?![0-9A-Za-z])")
+# NOT SEEN YET: a read that drops the x. Then only real digits count, and
+# only at the end of the name ("Common Fish Bait 296") or as a line alone.
+_BARE_COUNT = re.compile(r"(?:(?<=[BbT8]a[il1]t)|^)\s*([0-9](?: ?[0-9]){0,2})\s*$")
+# Vision's next-best readings of a line, tried when the best one has no count.
+TEXT_CANDIDATES = 3
 
 # The selected bait row has a gold frame. Measured on 2026-10-30 on 8 row
 # strips: selected rows had 208-572 gold pixels both above and below the text;
@@ -130,12 +138,19 @@ def item_rect(origin: CoordOrigin) -> PixelRect:
 Box = tuple[int, int, int, int]  # x0, y0, x1, y1 in image pixels
 
 
-def _lines(image: np.ndarray) -> list[tuple[float, str, Box | None, Box]]:
-    """Each text line as (distance of its centre from the image centre, text, name box, line box).
+class Line(NamedTuple):
+    dist: float  # distance of the line's centre from the image centre, as a fraction of the height
+    text: str  # Vision's best reading
+    name_box: Box | None  # box of the item name when the line is a "New Item" banner
+    box: Box
+    alts: tuple[str, ...]  # Vision's next-best readings, best first
 
-    The name box is the box of the item name when the line is a "New Item"
-    banner, else None. Vision can only give a substring's box while its results
-    are alive, so it is found here.
+
+def _lines(image: np.ndarray) -> list[Line]:
+    """Each text line Vision finds in the image.
+
+    Vision can only give a substring's box while its results are alive, so
+    the item name box is found here.
     """
     # No upscaling: on 2026-10-24 the panel strip read correctly at 0.5x, 0.75x
     # and 1x, but not at 1.2x or 2x.
@@ -158,10 +173,11 @@ def _lines(image: np.ndarray) -> list[tuple[float, str, Box | None, Box]]:
         if not (ok[0] if isinstance(ok, tuple) else ok):
             raise RuntimeError("macOS text recognition failed")
         for obs in req.results() or []:
-            top = obs.topCandidates_(1)
+            top = obs.topCandidates_(TEXT_CANDIDATES)
             if not top:
                 continue
             text = str(top[0].string())
+            alts = tuple(str(c.string()) for c in list(top)[1:])
             box = obs.boundingBox()  # normalised, origin at the bottom left
             centre = box.origin.y + box.size.height / 2
             line_box = (int(box.origin.x * W), int((1 - box.origin.y - box.size.height) * H),
@@ -175,22 +191,38 @@ def _lines(image: np.ndarray) -> list[tuple[float, str, Box | None, Box]]:
                     b = sub.boundingBox()  # normalised, origin at the bottom left
                     name_box = (int(b.origin.x * W), int((1 - b.origin.y - b.size.height) * H),
                                 int((b.origin.x + b.size.width) * W), int((1 - b.origin.y) * H))
-            out.append((abs(centre - 0.5), text, name_box, line_box))
+            out.append(Line(abs(centre - 0.5), text, name_box, line_box, alts))
     return out
+
+
+def parse_count(text: str) -> int | None:
+    """The bait count in one line of panel text ("Common Fish Bait x296"), or None."""
+    m = _COUNT.search(text)
+    if m:
+        return int(m.group(1).replace(" ", "").translate(_DIGIT_LOOKALIKES))
+    m = _BARE_COUNT.search(text)
+    if m:
+        return int(m.group(1).replace(" ", ""))
+    return None
+
+
+def _strip_count(text: str) -> str:
+    return _BARE_COUNT.sub("", _COUNT.sub("", text)).strip()
 
 
 def read_count(image: np.ndarray) -> tuple[int | None, str]:
     """(Bait count or None, text of the panel row at the strip centre).
 
     The row text is "" when nothing was read there. Its pieces (the name and
-    count may be read separately) are joined by " | ".
+    count may be read separately) are joined by " | ". Vision's best reading
+    of every piece is tried first, then its other readings.
     """
-    lines = sorted((d, t) for d, t, _, _ in _lines(image) if d <= ROW_REACH)
-    row = " | ".join(t for _, t in lines)
-    for _, text in lines:
-        m = _COUNT.search(text)
-        if m:
-            return int(m.group(1).translate(_DIGIT_LOOKALIKES)), row
+    lines = sorted((ln for ln in _lines(image) if ln.dist <= ROW_REACH), key=lambda ln: ln.dist)
+    row = " | ".join(ln.text for ln in lines)
+    for text in [ln.text for ln in lines] + [a for ln in lines for a in ln.alts]:
+        n = parse_count(text)
+        if n is not None:
+            return n, row
     return None, row
 
 
@@ -232,7 +264,7 @@ def read_item(image: np.ndarray) -> tuple[str | None, str | None, str]:
     the rarity of its colour. Returns (None, None, reason) when no banner is found.
     """
     lines = _lines(image)
-    for _, text, box, _ in lines:
+    for text, box in ((ln.text, ln.name_box) for ln in lines):
         m = _ITEM.search(text)
         if m and m.group(1):
             known = _known(m.group(1))
@@ -249,12 +281,12 @@ def read_item(image: np.ndarray) -> tuple[str | None, str | None, str]:
             return name, rarity, text
     if not lines:
         return None, None, "no text in the banner area"
-    return None, None, "no New Item banner in {!r}".format(" | ".join(t for _, t, _, _ in lines))
+    return None, None, "no New Item banner in {!r}".format(" | ".join(ln.text for ln in lines))
 
 
 def text_boxes(image: np.ndarray) -> list[tuple[str, Box]]:
     """Every text line in the image with its box."""
-    return [(text, box) for _, text, _, box in _lines(image)]
+    return [(ln.text, ln.box) for ln in _lines(image)]
 
 
 def shop_max(text: str) -> int | None:
@@ -273,19 +305,18 @@ def disconnected_text(image: np.ndarray) -> str | None:
     Both the title and its "Reconnect" button (or error code) must show, as in
     the Slayers 2 macro, so a chat line saying "disconnected" does not count.
     """
-    text = " | ".join(t for _, t, _, _ in _lines(image))
+    text = " | ".join(ln.text for ln in _lines(image))
     low = text.lower()
     if "disconnected" in low and ("reconnect" in low or "error code" in low):
         return text
     return None
 
 
-
 def row_bait(row: str, names: list[str]) -> str | None:
     """The bait name in a panel row's text (pieces joined by " | "), or None."""
     best_score, best = 0.0, None
     for part in row.split("|"):
-        part = _COUNT.sub("", part).strip()
+        part = _strip_count(part)
         for name in names:
             score = difflib.SequenceMatcher(None, part.lower(), name.lower()).ratio()
             if score > best_score:
@@ -298,7 +329,7 @@ def row_selected(image: np.ndarray) -> bool | None:
 
     None when no row text is found there (for example the panel is hidden).
     """
-    row = [box for d, _, _, box in _lines(image) if d <= ROW_REACH]
+    row = [ln.box for ln in _lines(image) if ln.dist <= ROW_REACH]
     if not row:
         return None
     b, g, r = (image[:, :, i].astype(np.int16) for i in range(3))
