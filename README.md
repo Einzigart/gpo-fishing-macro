@@ -7,10 +7,22 @@ or read game memory.
 ## Setup
 
 1. Install Python 3.12 from python.org if `Setup.command` says no Python is usable.
-2. Double-click `Setup.command`. It builds a private `.venv` and installs the packages.
-3. Grant Terminal these permissions under System Settings > Privacy & Security:
-   Accessibility, Input Monitoring, Screen Recording. Quit Terminal (Cmd-Q) after.
-4. Double-click `Launch.command` to open the app.
+2. Double-click `Setup.command`. It builds a private `.venv`, installs the packages,
+   and clears the download quarantine, so macOS lets the app open.
+3. Double-click `GPO Fishing Macro.app` to start the macro. No Terminal window opens.
+4. On the first start, macOS asks for three permissions for GPO Fishing Macro:
+   Accessibility, Input Monitoring, Screen Recording. Turn it on in each list under
+   System Settings > Privacy & Security, press F3 to quit the macro, and open the
+   app again.
+
+Keep the app in this folder: it runs the macro files next to it. To start it from
+the Dock or Applications, make an alias there (hold Option and Command while you
+drag the app). If setup is missing or the packages changed, the app opens
+`Setup.command` for you. If the macro ends with an error, the app shows a dialog
+and writes the details to `app-log.txt`.
+
+`Launch.command` still works and starts the macro from Terminal. Permissions are
+granted per app, so that way needs them for Terminal instead.
 
 ## First run
 
@@ -81,6 +93,9 @@ fish or item. A catch whose name could not be read is saved as "(name not read)"
 - `catches.csv` holds every catch (time, name, rarity). Delete it to start a new history.
 - `run-log.txt` holds the run log. Send it with `diagnose-log.txt` (from
   `Diagnose.command`) when you report a problem.
+- `app-log.txt` holds the output of the last start from the app, including errors.
+- `assets/app-icon.svg` is the source of the app icon,
+  `GPO Fishing Macro.app/Contents/Resources/AppIcon.icns`.
 
 ## Tests
 

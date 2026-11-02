@@ -1,0 +1,60 @@
+#!/bin/bash
+# Runs when "GPO Fishing Macro.app" is opened. Starts the macro from the folder
+# that holds the app, with no Terminal window. Output goes to app-log.txt.
+NAME="GPO Fishing Macro"
+APP="$(cd "$(dirname "$0")/../.." && pwd)"
+ROOT="$(dirname "$APP")"
+LOG="$ROOT/app-log.txt"
+
+# alert MESSAGE [BUTTON]: a dialog with OK and an optional extra button.
+# Prints the button that was clicked.
+alert() {
+    osascript \
+        -e 'on run argv' \
+        -e 'set extra to item 2 of argv' \
+        -e 'if extra is "" then' \
+        -e 'set choices to {"OK"}' \
+        -e 'else' \
+        -e 'set choices to {extra, "OK"}' \
+        -e 'end if' \
+        -e 'display dialog (item 1 of argv) buttons choices default button "OK" with title "GPO Fishing Macro" with icon caution' \
+        -e 'return button returned of result' \
+        -e 'end run' \
+        "$1" "${2:-}" 2>/dev/null
+}
+
+case "$APP" in
+    */AppTranslocation/*)
+        alert "macOS opened a quarantined copy of the app. Run Setup.command once (it clears the quarantine), then open the app again." >/dev/null
+        exit 1 ;;
+esac
+if [ ! -f "$ROOT/src/bootstrap.py" ]; then
+    alert "Keep $NAME in the macro folder, next to Setup.command. To start it from the Dock or Applications, make an alias of it there instead (hold Option and Command while you drag it)." >/dev/null
+    exit 1
+fi
+cd "$ROOT" || exit 1
+
+# main.py names the app in its permission messages.
+export GPO_MACRO_HOST="$NAME"
+echo "=== $(date '+%Y-%m-%d %H:%M:%S') $NAME started" > "$LOG"
+
+if ! source src/find_python.sh >>"$LOG" 2>&1; then
+    btn="$(alert "No usable Python was found on this Mac. Install Python 3.12 from python.org, then open the app again. The details are in app-log.txt." "Open log")"
+    [ "$btn" = "Open log" ] && open -t "$LOG"
+    exit 1
+fi
+
+# --no-install: a first install takes minutes and needs a visible window, so
+# it runs in Setup.command, not here. Exit code 78 means setup is needed.
+"$PY" src/bootstrap.py main.py --no-install >>"$LOG" 2>&1
+rc=$?
+if [ $rc -eq 78 ]; then
+    alert "The macro is not set up yet, or its packages changed. Setup.command opens in Terminal now. When it finishes, open the app again." >/dev/null
+    open "$ROOT/Setup.command"
+    exit 0
+fi
+if [ $rc -ne 0 ]; then
+    btn="$(alert "The macro exited with an error (code $rc). The details are in app-log.txt. If you report it, run Diagnose.command and send diagnose-log.txt too." "Open log")"
+    [ "$btn" = "Open log" ] && open -t "$LOG"
+fi
+exit $rc
