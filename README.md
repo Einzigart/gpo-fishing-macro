@@ -29,7 +29,10 @@ or read game memory.
    If the panel isn't showing at start (rod not equipped), the app stops and says so.
    After each bait click, the app checks the game's gold "selected" frame on that
    row; if the bait still isn't selected after a second click, it stops before
-   casting, so it never uses the last bait of another type. If a count can't be read
+   casting, so it never uses the last bait of another type. Each count is read up to
+   5 times. One read is enough when it shows the count the app expects (one less, or
+   the same); any other count must read the same twice. A count of 1 ends that bait,
+   so it needs 2 equal reads, or 3 when it was not expected. If a count can't be read
    mid-run, the log says why, the count shows as unknown, and the app keeps fishing
    with that bait until a read works.
 4. Optional: tick **Buy Common Fish Bait when all bait is down to 1** and stand next

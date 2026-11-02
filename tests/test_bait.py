@@ -48,9 +48,25 @@ class ReaderTests(unittest.TestCase):
         for text, n in (("Rare Fish Bait | ХЦ4", 44), ("Rare Fish Bait ×З6", 36),
                         ("Common Fish Bait ×G4", 64), ("Common Fish Bait ×S", 5)):
             with self.subTest(text=text):
-                m = screen_text._COUNT.search(text)
-                self.assertEqual(int(m.group(1).translate(screen_text._DIGIT_LOOKALIKES)), n)
-        self.assertIsNone(screen_text._COUNT.search("Exotic Tigerfin"))
+                self.assertEqual(screen_text.parse_count(text), n)
+        self.assertIsNone(screen_text.parse_count("Exotic Tigerfin"))
+        self.assertIsNone(screen_text.parse_count("Common Fish Bait"))
+
+    def test_split_digits_and_missing_x(self):
+        for text, n in (("Common Fish Bait x29 6", 296), ("Common Fish Bait 296", 296),
+                        ("Legendary FishTait 33", 33), ("296", 296)):
+            with self.subTest(text=text):
+                self.assertEqual(screen_text.parse_count(text), n)
+        # Without an x, look-alike letters are not taken as digits.
+        self.assertIsNone(screen_text.parse_count("Common Fish Bait SG"))
+        names = list(config.BAIT_TYPES)
+        self.assertEqual(screen_text.row_bait("Common Fish Bait 296", names), "Common Fish Bait")
+
+    def test_other_readings_are_tried(self):
+        # Vision's best reading has no count; its next-best one has.
+        line = screen_text.Line(0.0, "Rare Fish Bait xЖ4", None, (0, 0, 10, 10), ("Rare Fish Bait x44",))
+        with mock.patch.object(screen_text, "_lines", return_value=[line]):
+            self.assertEqual(screen_text.read_count(np.zeros((4, 4, 3), np.uint8)), (44, "Rare Fish Bait xЖ4"))
 
     def test_no_count_in_other_ui(self):
         count, _ = screen_text.read_count(image("gap_middle")[:120])
@@ -82,7 +98,7 @@ class ReaderTests(unittest.TestCase):
 
     def _colour_rarity(self, colour_at) -> str:
         img = self._recoloured(colour_at)
-        box = next(b for _, _, b, _ in screen_text._lines(img) if b)
+        box = next(ln.name_box for ln in screen_text._lines(img) if ln.name_box)
         return screen_text.rarity_of(img[box[1]:box[3], box[0]:box[2]])
 
     def test_name_colours(self):
@@ -285,6 +301,44 @@ class BaitTests(unittest.TestCase):
         with self.assertRaises(fishing.OutOfBait):
             f._use_bait()
         self.assertEqual(f.cfg["baits"][0]["count"], 1)
+
+    def test_one_low_misread_does_not_end_the_bait(self):
+        # x14 misread once as x1: the bait must not be treated as used up.
+        f = make([15])
+        self.screen[0.0] = [1, 14]
+        f._use_bait()
+        self.assertEqual(f.cfg["baits"][0]["count"], 14)
+
+    def test_unexpected_low_count_needs_three_reads(self):
+        f = make([40, 5])
+        self.screen.update({0.0: [1, 1, 39], 0.1: 5})
+        f._use_bait()  # two reads of 1 are not enough; 39 is expected
+        self.assertEqual(f.cfg["baits"][0]["count"], 39)
+        self.assertEqual(f.cfg["bait_index"], 0)
+        self.screen[0.0] = 1
+        f._use_bait()  # 1 read three times: trusted, so the run moves on
+        self.assertEqual(f.cfg["baits"][0]["count"], 1)
+        self.assertEqual(f.cfg["bait_index"], 1)
+
+    def test_failed_recognition_is_a_bad_read(self):
+        f = make([10])
+        reads = iter([RuntimeError("macOS text recognition failed"), (9, "b0 x9")])
+
+        def read(p):
+            r = next(reads)
+            if isinstance(r, Exception):
+                raise r
+            return r
+
+        with mock.patch.object(fishing, "read_bait_count", side_effect=read):
+            f._use_bait()
+        self.assertEqual(f.cfg["baits"][0]["count"], 9)
+
+    def test_reads_needed(self):
+        self.assertEqual(fishing.reads_needed(44, {44, 45}), 1)
+        self.assertEqual(fishing.reads_needed(1, {1, 2}), 2)
+        self.assertEqual(fishing.reads_needed(30, {44, 45}), fishing.COUNT_AGREE)
+        self.assertEqual(fishing.reads_needed(1, None), fishing.LOW_COUNT_AGREE)
 
     def test_check_ready_needs_a_ticked_bait(self):
         f = make([3], use=[False])
