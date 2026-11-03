@@ -285,6 +285,15 @@ class RowCheckTests(unittest.TestCase):
         self.assertEqual(screen_text.row_bait("Common Fish Bait x300", PANEL_NAMES), "Common Fish Bait")
         self.assertIsNone(screen_text.row_bait("×30", PANEL_NAMES))
 
+    def test_seller_question_with_misreads(self):
+        # Windows OCR splits the "m" of "Common" (probe, 2026-11-04).
+        def asks(t):
+            return screen_text.has_phrase(t, "purchase") and screen_text.has_phrase(t, "common fish")
+        self.assertTrue(asks("Would you like to purchase 1 Common Fish"))
+        self.assertTrue(asks("Would you like to purchase 1 Convnon Fish"))
+        self.assertFalse(asks("Would you like to purchase 1 Rare Fish"))
+        self.assertFalse(asks("Common Fish Bait"))
+
     def _rows(self, by_row):
         ys = {fishing.row_spot(k)["y"]: v for k, v in enumerate(by_row)}
         return lambda p: ys.get(p["y"], (None, ""))
