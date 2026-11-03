@@ -49,7 +49,8 @@ _DIGIT_LOOKALIKES = str.maketrans({"S": "5", "s": "5", "G": "6", "З": "3", "з"
                                    "Ц": "4", "ц": "4", "O": "0", "o": "0", "I": "1", "l": "1"})
 _DIGIT = "[0-9SsGЗзЦцOoIl]"
 # One space may split the digits ("x29 6"): without it, that read gave 29.
-_COUNT = re.compile(rf"[xX×хХ]\s*({_DIGIT}(?: ?{_DIGIT}){{0,2}})(?![0-9A-Za-z])")
+# Windows OCR read the x of "x113" as "*" (probe, 2026-11-04).
+_COUNT = re.compile(rf"[xX×хХ*]\s*({_DIGIT}(?: ?{_DIGIT}){{0,2}})(?![0-9A-Za-z])")
 # NOT SEEN YET: a read that drops the x (Vision), or splits it off (Windows OCR). Then only real digits count, and
 # only at the end of the name ("Common Fish Bait 296") or as a line alone.
 _BARE_COUNT = re.compile(r"(?:(?<=[BbT8]a[il1]t)|^)\s*([0-9](?: ?[0-9]){0,2})\s*$")
@@ -64,6 +65,11 @@ SELECTED_GOLD_MIN = 100
 # 2026-10-26, including the rainbow "Legendary FishTait"; different bait names
 # score at most 0.74 against each other.
 ROW_NAME_MATCH = 0.85
+# Windows OCR splits the game font's "m" (probe of a 1920x991 window,
+# 2026-11-04): "Common" read as "Convnon" and "Cornrmn", "Blacksmith" as
+# "frbrngacksrnith". Text is folded before it is matched, so "Convnon Fish
+# Bait" scores 0.94 against "Common Fish Bait" instead of 0.85.
+_M_SPLITS = ("rn", "nv")
 
 # Area of the "New Item" banner as (x0, y0, x1, y1) fractions of the window.
 # Measured on 2026-10-24 in two screenshots: the banner sat at 14-15% of the
@@ -286,17 +292,35 @@ def is_panel_footer(row: str) -> bool:
 
     The footer reads "Craft more bait types from | Blacksmith Sen!"; it moved
     up into the row of a bait that was used up (snapshot, 2026-11-02).
+    Windows OCR read only its end, as "types frbrngacksrnith" (2026-11-04).
     """
-    return "craft more" in row.lower()
+    text = fold(row)
+    return "craft more" in text or "smith" in text
+
+
+def fold(text: str) -> str:
+    """Lower-case text with the split "m" of Windows OCR joined again."""
+    text = text.lower()
+    for split in _M_SPLITS:
+        text = text.replace(split, "m")
+    return text
+
+
+def has_phrase(text: str, phrase: str) -> bool:
+    """Whether some run of words in `text` reads as `phrase`, misreads allowed."""
+    words, want = fold(text).split(), fold(phrase)
+    n = len(want.split())
+    return any(difflib.SequenceMatcher(None, " ".join(words[i:i + n]), want).ratio() >= ROW_NAME_MATCH
+               for i in range(len(words) - n + 1))
 
 
 def row_bait(row: str, names: list[str]) -> str | None:
     """The bait name in a panel row's text (pieces joined by " | "), or None."""
     best_score, best = 0.0, None
     for part in row.split("|"):
-        part = _strip_count(part)
+        part = fold(_strip_count(part))
         for name in names:
-            score = difflib.SequenceMatcher(None, part.lower(), name.lower()).ratio()
+            score = difflib.SequenceMatcher(None, part, fold(name)).ratio()
             if score > best_score:
                 best_score, best = score, name
     return best if best_score >= ROW_NAME_MATCH else None

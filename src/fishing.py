@@ -27,6 +27,7 @@ from screen_text import (
     SHOP_AREA,
     area_rect,
     disconnected_text,
+    has_phrase,
     is_panel_footer,
     item_rect,
     read_count,
@@ -452,7 +453,7 @@ class Fisher:
         # could open a different Yes/No dialog.
         ask = self._shop_find({"yes": lambda t: t.strip().lower() == "yes",
                                "no": lambda t: t.strip().lower() == "no",
-                               "question": lambda t: "purchase" in t.lower() and "common fish" in t.lower()})
+                               "question": lambda t: has_phrase(t, "purchase") and has_phrase(t, "common fish")})
         if ask is None:
             return "the Common Fish Bait seller's question did not open; stand next to that seller"
         click_at(*ask["yes"][1])

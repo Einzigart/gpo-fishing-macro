@@ -76,6 +76,19 @@ class ReaderTests(unittest.TestCase):
         self.assertIsNone(count)
         self.assertTrue(screen_text.is_panel_footer(row), row)
 
+    def test_windows_ocr_reads(self):
+        # Windows OCR reads of a 1920x991 window (probe, 2026-11-04).
+        names = list(config.BAIT_TYPES)
+        lines = [screen_text.Line(0.01, "*113", None, (354, 23, 384, 35), ()),
+                 screen_text.Line(0.06, "Convnon Fish Bait", None, (173, 17, 326, 35), ())]
+        with mock.patch.object(screen_text, "_lines", return_value=lines):
+            count, row = screen_text.read_count(np.zeros((4, 4, 3), np.uint8))
+        self.assertEqual(count, 113)
+        self.assertEqual(screen_text.row_bait(row, names), "Common Fish Bait")
+        self.assertEqual(screen_text.row_bait("Cornrmn Fish gait", names), "Common Fish Bait")
+        self.assertTrue(screen_text.is_panel_footer("types frbrngacksrnith"))
+        self.assertFalse(screen_text.is_panel_footer(row))
+
     def test_no_count_in_other_ui(self):
         count, _ = screen_text.read_count(image("gap_middle")[:120])
         self.assertIsNone(count)
