@@ -1,3 +1,4 @@
+import re
 import sys
 import unittest
 from pathlib import Path
@@ -60,9 +61,24 @@ class DialogReadTests(unittest.TestCase):
         amount = centre(how, lambda t: t.strip() == "1")
         self.assertAlmostEqual((yes[0] + no[0]) // 2, amount[0], delta=5)
 
-    def test_closing_dots(self):
-        lines = screen_text.text_boxes(image("shop_dots"))
-        self.assertIsNotNone(centre(lines, screen_text.is_dots))
+    def test_closing_dots_show_where_the_amount_box_was(self):
+        # The "..." read as ".••" here; over an ability label it read "Loaie" (2026-11-02).
+        dots = centre(screen_text.text_boxes(image("shop_dots")),
+                      lambda t: re.fullmatch(r"[.·•…]{2,}", t.replace(" ", "")) is not None)
+        amount = centre(screen_text.text_boxes(image("shop_how_many")), lambda t: t.strip() == "1")
+        self.assertAlmostEqual(dots[0], amount[0], delta=5)
+        self.assertAlmostEqual(dots[1], amount[1], delta=8)
+
+    def test_backdrop_band_is_inside_the_dialog_backdrop(self):
+        ask = screen_text.text_boxes(image("shop_question"))
+        band = fishing._backdrop_band(fishing.PixelRect(0, 0, 1000, 448), {
+            "yes": ("Yes", centre(ask, lambda t: t.strip().lower() == "yes")),
+            "no": ("No", centre(ask, lambda t: t.strip().lower() == "no")),
+            "question": ("", centre(ask, lambda t: "purchase" in t.lower()))})
+        x0, y0, x1, y1 = band
+        for name in ("shop_question", "shop_how_many", "shop_dots"):
+            # The deck outside the backdrop reads 108-139 grey.
+            self.assertLess(image(name)[y0:y1, x0:x1].mean(), 70, name)
 
     def test_max_with_lookalikes(self):
         self.assertEqual(screen_text.shop_max("How many do you want? MAX: 1"), 1)
@@ -83,13 +99,20 @@ class BuyFlowTests(unittest.TestCase):
             p = mock.patch.object(fishing, name, side_effect=fake)
             p.start()
             self.addCleanup(p.stop)
+        p = mock.patch.object(fishing.Fisher, "_shop_image",
+                              return_value=(fishing.PixelRect(0, 0, 10, 10), np.zeros((10, 10, 3), np.uint8)))
+        p.start()
+        self.addCleanup(p.stop)
+        p = mock.patch.object(fishing.Fisher, "_close_shop",
+                              side_effect=lambda before, ask, box: self.log.append(("close", *box)))
+        p.start()
+        self.addCleanup(p.stop)
 
     def _dialog(self, f, max_text):
         steps = iter([
             {"yes": ("Yes", (813, 1142)), "no": ("NO", (1187, 1142)),
              "question": ("Would you like to purchase 1 Common Fish", (963, 976))},
             {"buy": ("Buy", (812, 1146)), "max": (max_text, (900, 976))},
-            {"dots": (".••", (1001, 1151))},
         ])
         return mock.patch.object(f, "_shop_find", side_effect=lambda want: next(steps)), \
             mock.patch.object(f, "_focus")
@@ -103,7 +126,7 @@ class BuyFlowTests(unittest.TestCase):
             ("key", "e"), ("click", 813, 1142), ("click", 1000, 1146),
             ("key", "backspace"), ("key", "backspace"), ("key", "backspace"), ("key", "backspace"),
             ("key", "2"), ("key", "9"), ("key", "9"),
-            ("click", 812, 1146), ("click", 1001, 1151),
+            ("click", 812, 1146), ("close", 1000, 1146),
         ])
 
     def test_max_zero_cancels(self):
@@ -122,17 +145,6 @@ class BuyFlowTests(unittest.TestCase):
                 mock.patch.object(f, "_focus"):
             self.assertIn("closed the dialog", f._buy_common())
         self.assertEqual(self.log[-1], ("click", 1187, 1142))
-
-    def test_missing_dots_never_clicks_blindly(self):
-        # The "..." sits over the Logia ability button.
-        f = make([1, 1])
-        steps = iter([{"yes": ("Yes", (813, 1142)), "no": ("NO", (1187, 1142)),
-                       "question": ("purchase 1 Common Fish", (963, 976))},
-                      {"buy": ("Buy", (812, 1146)), "max": ("MAX: 5", (900, 976))}, None])
-        with mock.patch.object(f, "_shop_find", side_effect=lambda want: next(steps)), \
-                mock.patch.object(f, "_focus"):
-            self.assertIsNone(f._buy_common())
-        self.assertEqual(self.log[-1], ("click", 812, 1146))  # Buy was the last click
 
     def test_other_npc_dialog_is_not_answered(self):
         f = make([1, 1])
@@ -190,6 +202,68 @@ class BuyFlowTests(unittest.TestCase):
         with mock.patch.object(f, "_buy_common") as buy, self.assertRaises(fishing.OutOfBait):
             f._next_bait(select=False)
         buy.assert_not_called()
+
+
+SHOP_ASK = {"yes": ("Yes", (20, 80)), "no": ("No", (80, 80)), "question": ("purchase", (50, 20))}
+
+
+class CloseShopTests(unittest.TestCase):
+    """The "..." step, told apart by the dialog's dark backdrop, not by its text."""
+
+    RECT = fishing.PixelRect(0, 0, 100, 100)
+    BOX = (50, 80)
+
+    def run_close(self, frames):
+        """Run _close_shop over `frames` ("game", "how_many" or "dots"); the last one repeats."""
+        before = np.full((100, 100, 3), 120, np.uint8)
+        images = {"game": before, "how_many": np.full((100, 100, 3), 50, np.uint8),
+                  "dots": np.full((100, 100, 3), 51, np.uint8)}
+        shown = iter(frames)
+        last = [frames[0]]
+
+        def shop_image():
+            last[0] = next(shown, last[0])
+            return self.RECT, images[last[0]]
+
+        clock = [0.0]
+
+        def sleep(sec, abort=None):
+            clock[0] += sec
+            return False
+
+        clicks, statuses = [], []
+        f = make([1, 1])
+        f.hooks = fishing.Hooks(status=statuses.append, event=lambda k, c: None,
+                                frame=lambda i, r: None, bait_changed=lambda: None)
+        with mock.patch.object(f, "_shop_image", side_effect=shop_image), \
+                mock.patch.object(fishing, "text_boxes",
+                                  side_effect=lambda im: [("Buy", (0, 0, 9, 9))] if im is images["how_many"] else []), \
+                mock.patch.object(fishing, "click_at", side_effect=lambda x, y: clicks.append((x, y))), \
+                mock.patch.object(fishing.time, "monotonic", side_effect=lambda: clock[0]), \
+                mock.patch.object(fishing, "sleep_interruptible", side_effect=sleep):
+            f._close_shop(before, SHOP_ASK, self.BOX)
+        return clicks, statuses
+
+    def test_clicks_the_amount_box_spot_once_the_dots_show(self):
+        clicks, statuses = self.run_close(["how_many", "how_many", "dots", "game"])
+        self.assertEqual(clicks, [self.BOX])
+        self.assertEqual(statuses, [])
+
+    def test_never_clicks_when_the_dialog_is_gone(self):
+        # The click would land on the game, such as an ability button.
+        clicks, statuses = self.run_close(["game"])
+        self.assertEqual(clicks, [])
+        self.assertIn("did not show", statuses[0])
+
+    def test_never_clicks_while_the_how_many_step_shows(self):
+        clicks, statuses = self.run_close(["how_many"])
+        self.assertEqual(clicks, [])
+        self.assertIn("did not show", statuses[0])
+
+    def test_says_when_the_dialog_stays_open(self):
+        clicks, statuses = self.run_close(["dots"])
+        self.assertEqual(clicks, [self.BOX])
+        self.assertIn("stayed open", statuses[0])
 
 
 def dialog_image(lines) -> np.ndarray:

@@ -36,6 +36,11 @@ STRIP_HALF_H = 0.03
 # Rows sit about 3.5% of the window apart (user config, 2026-10-24), so a
 # neighbour row can enter the strip edge but not its middle half.
 ROW_REACH = 0.25
+# The count sits at the right end of the row. Vision dropped a short count
+# ("X1") from the whole strip in a 1512-point-wide window but read it from the
+# strip's right half alone (2026-11-02). The right half read the right count in
+# all 12 strips on hand; the right 40% missed one ("Rare Fish Bait x1").
+COUNT_PART_X = 0.5
 
 # Vision reads the stylised count digits as look-alike letters at times. Seen
 # in real runs on 2026-10-24: "ХЦ4" for x44, "×З6" for x36, "×G4" for x64,
@@ -91,8 +96,6 @@ NAME_MATCH = 0.9
 # screenshots: its text and buttons sat at 25-75% across and 75-93% down.
 SHOP_AREA = (0.25, 0.62, 0.75, 0.99)
 _MAX = re.compile(r"MAX\s*[:;.]?\s*([0-9SsGЗзЦцOoIl]{1,3})(?![0-9A-Za-z])", re.IGNORECASE)
-# The "..." button that closes the dialog read as ".••" (2026-10-25).
-_DOTS = re.compile(r"^[.·•…]{2,}$")
 
 # Roblox's "Disconnected" dialog ("Error Code: 277", "Leave", "Reconnect") sits
 # in the window centre: 37-63% across and down in the user's screenshot
@@ -177,8 +180,16 @@ def read_count(image: np.ndarray) -> tuple[int | None, str]:
 
     The row text is "" when nothing was read there. Its pieces (the name and
     count may be read separately) are joined by " | ". Vision's best reading
-    of every piece is tried first, then its other readings.
+    of every piece is tried first, then its other readings. With no count in
+    the whole strip, the strip's right part is read alone.
     """
+    n, row = _count_in(image)
+    if n is None:
+        n, _ = _count_in(image[:, int(image.shape[1] * COUNT_PART_X):])
+    return n, row
+
+
+def _count_in(image: np.ndarray) -> tuple[int | None, str]:
     lines = sorted((ln for ln in _lines(image) if ln.dist <= ROW_REACH), key=lambda ln: ln.dist)
     row = " | ".join(ln.text for ln in lines)
     for text in [ln.text for ln in lines] + [a for ln in lines for a in ln.alts]:
@@ -257,10 +268,6 @@ def shop_max(text: str) -> int | None:
     return int(m.group(1).translate(_DIGIT_LOOKALIKES)) if m else None
 
 
-def is_dots(text: str) -> bool:
-    return bool(_DOTS.match(text.replace(" ", "")))
-
-
 def disconnected_text(image: np.ndarray) -> str | None:
     """The text of Roblox's "Disconnected" dialog when it is in the image, else None.
 
@@ -272,6 +279,15 @@ def disconnected_text(image: np.ndarray) -> str | None:
     if "disconnected" in low and ("reconnect" in low or "error code" in low):
         return text
     return None
+
+
+def is_panel_footer(row: str) -> bool:
+    """Whether a panel row's text is the footer under the last bait row.
+
+    The footer reads "Craft more bait types from | Blacksmith Sen!"; it moved
+    up into the row of a bait that was used up (snapshot, 2026-11-02).
+    """
+    return "craft more" in row.lower()
 
 
 def row_bait(row: str, names: list[str]) -> str | None:
