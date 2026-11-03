@@ -107,7 +107,9 @@ def _recognize(image: np.ndarray, span_of: Callable[[str], tuple[int, int] | Non
     h, w = bgra.shape[:2]
     writer = DataWriter()
     writer.write_bytes(bgra.tobytes())
-    bitmap = SoftwareBitmap.create_copy_from_buffer(
+    # pywinrt names the overload with the alpha mode apart; create_copy_from_buffer
+    # takes 4 arguments and raises "Invalid parameter count" on 5.
+    bitmap = SoftwareBitmap.create_copy_with_alpha_from_buffer(
         writer.detach_buffer(), BitmapPixelFormat.BGRA8, w, h, BitmapAlphaMode.PREMULTIPLIED)
     result = engine.recognize_async(bitmap).get()
     out = []
