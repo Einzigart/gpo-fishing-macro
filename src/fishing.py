@@ -27,6 +27,7 @@ from screen_text import (
     SHOP_AREA,
     area_rect,
     disconnected_text,
+    is_panel_footer,
     item_rect,
     read_count,
     read_item,
@@ -564,9 +565,9 @@ class Fisher:
                 why = str(exc)
                 continue
             found = row_bait(row, list(BAIT_TYPES)) if row else None
-            if (found is not None and found != bait["name"]) or not row:
-                # Another bait or nothing at this row: the rows may have moved
-                # (a bait type gained or used up), so map them once more.
+            if (found is not None and found != bait["name"]) or not row or is_panel_footer(row):
+                # Another bait, nothing or the footer at this row: the rows may
+                # have moved (a bait type gained or used up), so map them once more.
                 if found is not None and rescanned:
                     raise StopRun(f"The Fishing Baits panel keeps changing: {bait['name']}'s row shows {found}.")
                 if not rescanned:
@@ -595,8 +596,10 @@ class Fisher:
         The panel lists only owned baits, from the top, so a missing bait type
         moves the rows below it up (2026-10-26/30: a gained or used-up Legendary
         shifted Rare and Common). Ticked baits that are not listed get count 0.
+        A used-up last bait moves nothing, but the footer takes its row.
         """
         rows: dict[str, int] = {}
+        footer = False
         for k in range(len(BAIT_TYPES)):
             name = None
             for attempt in range(SCAN_READ_TRIES):
@@ -607,7 +610,8 @@ class Fisher:
                 except (RuntimeError, OSError):
                     continue  # one failed text recognition; try the row again
                 name = row_bait(row, list(BAIT_TYPES)) if row else None
-                if name is not None:
+                footer = bool(row) and is_panel_footer(row)
+                if name is not None or footer:
                     break
             if name is None or name in rows:
                 break  # rows run from the top without gaps
@@ -617,7 +621,7 @@ class Fisher:
             # last map rather than treat every bait as gone.
             self.hooks.status("Bait panel: nothing readable, keeping the last layout.")
             return
-        if all(self._rows.get(n) == k for n, k in rows.items()):
+        if not footer and all(self._rows.get(n) == k for n, k in rows.items()):
             # Every bait read is where it was, so nothing moved: a row that did
             # not read is a misread, not a bait that is gone.
             rows = {**self._rows, **rows}

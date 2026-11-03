@@ -68,6 +68,14 @@ class ReaderTests(unittest.TestCase):
         with mock.patch.object(screen_text, "_lines", return_value=[line]):
             self.assertEqual(screen_text.read_count(np.zeros((4, 4, 3), np.uint8)), (44, "Rare Fish Bait xЖ4"))
 
+    def test_short_count_in_a_small_window(self):
+        # Rows from the 1512-point-wide window of 2026-11-02: the whole strip read only
+        # "Rare Fish Bait", and the used-up Common's row showed the panel footer.
+        self.assertEqual(screen_text.read_count(image("bait_small_rare_x1"))[0], 1)
+        count, row = screen_text.read_count(image("bait_small_footer"))
+        self.assertIsNone(count)
+        self.assertTrue(screen_text.is_panel_footer(row), row)
+
     def test_no_count_in_other_ui(self):
         count, _ = screen_text.read_count(image("gap_middle")[:120])
         self.assertIsNone(count)
@@ -127,11 +135,14 @@ class BaitTests(unittest.TestCase):
         # misreads first). self.names: row k -> bait name, "b<k>" by default.
         self.screen = {}
         self.names = {}
+        self.footer_row = None  # the row that shows the panel footer
 
         def read(p):
+            k = round(p["x"] * 10)
+            if k == self.footer_row:
+                return None, "Craft more bait types from | Blacksmith Sen!"
             if p["x"] not in self.screen:
                 return None, ""
-            k = round(p["x"] * 10)
             v = self.screen[p["x"]]
             if isinstance(v, list):
                 v = v.pop(0) if len(v) > 1 else v[0]
@@ -142,7 +153,7 @@ class BaitTests(unittest.TestCase):
             ("read_bait_count", read),
             ("sleep_interruptible", lambda *a, **kw: False),
             ("row_spot", lambda k: {"x": k / 10, "y": 0.5}),
-            ("row_bait", lambda row, names: row.split()[0] if row else None),
+            ("row_bait", lambda row, names: row.split()[0] if row and "Craft" not in row else None),
             ("bait_selected", lambda p: self.selected.pop(0) if self.selected else True),
         ):
             patcher = mock.patch.object(fishing, name, side_effect=fake)
@@ -218,6 +229,26 @@ class BaitTests(unittest.TestCase):
         f._scan_panel()
         self.assertEqual(f._rows, {"b0": 0, "b1": 1})
         self.assertEqual(f.cfg["baits"][1]["count"], 5)
+
+    def test_footer_in_the_last_row_drops_the_used_up_bait(self):
+        # The snapshot of 2026-11-02: Common used up, Rare still in row 0, the footer in row 1.
+        f = make([5, 5])
+        self.screen[0.0] = 5
+        self.footer_row = 1
+        f._scan_panel()
+        self.assertEqual(f._rows, {"b0": 0})
+        self.assertEqual(f.cfg["baits"][1]["count"], 0)
+
+    def test_last_bait_used_up_moves_on(self):
+        # The count of b1 was unknown, so the run fished through its last one.
+        f = make([5, None])
+        f.cfg["bait_index"] = 1
+        self.screen[0.0] = 5
+        self.footer_row = 1
+        f._use_bait()
+        self.assertEqual(f.cfg["baits"][1]["count"], 0)
+        self.assertEqual(f.cfg["bait_index"], 0)
+        self.assertEqual(self.clicks, [0.0])
 
     def test_blank_scan_keeps_the_layout(self):
         f = make([5, 5])
