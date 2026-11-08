@@ -263,6 +263,16 @@ class BaitTests(unittest.TestCase):
         self.assertEqual(f.cfg["bait_index"], 0)
         self.assertEqual(self.clicks, [0.0])
 
+    def test_failed_text_recognition_is_named_at_start(self):
+        # 2026-11-08: Vision failed every read, and the run only said it couldn't see the panel.
+        f = make([5])
+        f._rows = {}
+        failure = RuntimeError("macOS text recognition failed")
+        with mock.patch.object(fishing, "read_bait_count", side_effect=failure), \
+                self.assertRaises(fishing.StopRun) as ctx:
+            f._read_all_baits()
+        self.assertIn("macOS text recognition failed", str(ctx.exception))
+
     def test_blank_scan_keeps_the_layout(self):
         f = make([5, 5])
         f._scan_panel()  # nothing readable

@@ -46,9 +46,11 @@ def recognize(image: np.ndarray, span_of: Callable[[str], tuple[int, int] | None
         req.setUsesLanguageCorrection_(False)
         # English only: with the default, digits came back as Cyrillic letters.
         req.setRecognitionLanguages_(["en-US"])
-        ok = handler.performRequests_error_([req], None)
-        if not (ok[0] if isinstance(ok, tuple) else ok):
-            raise RuntimeError("macOS text recognition failed")
+        ok, err = handler.performRequests_error_([req], None)
+        if not ok:
+            # 2026-11-08: Vision failed every read with an e5rtError until the Mac restarted.
+            why = err.localizedDescription() if err else "no reason given"
+            raise RuntimeError(f"macOS text recognition failed ({why}); restart the Mac if it keeps failing")
         for obs in req.results() or []:
             top = obs.topCandidates_(TEXT_CANDIDATES)
             if not top:

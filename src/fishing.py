@@ -591,16 +591,19 @@ class Fisher:
         k = self._rows.get(bait["name"])
         return None if k is None else row_spot(k)
 
-    def _scan_panel(self) -> None:
+    def _scan_panel(self) -> str | None:
         """Map each bait in the "Fishing Baits" panel to its row by reading the names.
 
         The panel lists only owned baits, from the top, so a missing bait type
         moves the rows below it up (2026-10-26/30: a gained or used-up Legendary
         shifted Rare and Common). Ticked baits that are not listed get count 0.
         A used-up last bait moves nothing, but the footer takes its row.
+
+        Returns the text recognition error when no row was read because of it.
         """
         rows: dict[str, int] = {}
         footer = False
+        failed = None
         for k in range(len(BAIT_TYPES)):
             name = None
             for attempt in range(SCAN_READ_TRIES):
@@ -608,8 +611,10 @@ class Fisher:
                     break
                 try:
                     _, row = read_bait_count(row_spot(k))
-                except (RuntimeError, OSError):
+                except (RuntimeError, OSError) as exc:
+                    failed = str(exc)
                     continue  # one failed text recognition; try the row again
+                failed = None
                 name = row_bait(row, list(BAIT_TYPES)) if row else None
                 footer = bool(row) and is_panel_footer(row)
                 if name is not None or footer:
@@ -620,8 +625,9 @@ class Fisher:
         if not rows:
             # Nothing readable (panel hidden or covered for a moment): keep the
             # last map rather than treat every bait as gone.
-            self.hooks.status("Bait panel: nothing readable, keeping the last layout.")
-            return
+            self.hooks.status(f"Bait panel: {failed}." if failed
+                              else "Bait panel: nothing readable, keeping the last layout.")
+            return failed
         if not footer and all(self._rows.get(n) == k for n, k in rows.items()):
             # Every bait read is where it was, so nothing moved: a row that did
             # not read is a misread, not a bait that is gone.
@@ -631,6 +637,7 @@ class Fisher:
         for bait in self.cfg["baits"]:
             if bait["use"] and bait["name"] not in rows:
                 bait["count"] = 0
+        return None
 
     def _set_count(self, bait: dict, expect: set[int] | None) -> None:
         """Store the panel count, or None (unknown) when it can't be trusted.
@@ -651,9 +658,10 @@ class Fisher:
         A ticked bait the player has none of is skipped (count 0). With no bait
         panel at all the rod is not out, so the run stops and says so.
         """
-        self._scan_panel()
+        failed = self._scan_panel()
         if not self._rows:
-            raise StopRun("Couldn't see the Fishing Baits panel. Equip the rod so it shows, then start again.")
+            raise StopRun(f"Couldn't read the Fishing Baits panel: {failed}." if failed else
+                          "Couldn't see the Fishing Baits panel. Equip the rod so it shows, then start again.")
         for bait in self.cfg["baits"]:
             if not bait["use"]:
                 continue
