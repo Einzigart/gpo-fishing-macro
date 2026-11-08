@@ -55,11 +55,11 @@ _COUNT = re.compile(rf"[xX×хХ*]\s*({_DIGIT}(?: ?{_DIGIT}){{0,2}})(?![0-9A-Za-
 # only at the end of the name ("Common Fish Bait 296") or as a line alone.
 _BARE_COUNT = re.compile(r"(?:(?<=[BbT8]a[il1]t)|^)\s*([0-9](?: ?[0-9]){0,2})\s*$")
 
-# The selected bait row has a gold frame. Measured on 2026-10-30 on 8 row
-# strips: selected rows had 208-572 gold pixels both above and below the text;
-# unselected rows had 0-11 on at least one side (a selected neighbour's frame
-# can show on the other side). Gold is the frame and count colour.
-SELECTED_GOLD_MIN = 100
+# The selected bait row has a gold frame, and an edge of it is a gold line
+# across the row. Share of a strip's width that is gold in one pixel row
+# (2026-11-08, 6 fixture strips and the live 1512x921 panel): frame edges
+# 0.20-0.46, the gold count and footer text at most 0.09.
+SELECTED_LINE_SHARE = 0.15
 
 # A panel row's bait name (difflib ratio). Real reads scored 0.92-1.0 on
 # 2026-10-26, including the rainbow "Legendary FishTait"; different bait names
@@ -336,10 +336,9 @@ def row_selected(image: np.ndarray) -> bool | None:
         return None
     b, g, r = (image[:, :, i].astype(np.int16) for i in range(3))
     gold = (r >= 180) & (g >= 110) & (g <= 215) & (b <= 110) & (r - b >= 100)
-    for x0, y0, x1, y1 in row:  # the count is gold too; only the frame counts
-        gold[max(0, y0 - 2):y1 + 2, max(0, x0 - 2):x1 + 2] = False
-    top, bot = min(b[1] for b in row), max(b[3] for b in row)
-    h = bot - top
-    above = int(gold[max(0, top - h):max(0, top - 2)].sum())
-    below = int(gold[bot + 2:bot + h].sum())
-    return above >= SELECTED_GOLD_MIN and below >= SELECTED_GOLD_MIN
+    edges = np.flatnonzero(gold.sum(axis=1) >= SELECTED_LINE_SHARE * image.shape[1])
+    # Not the text box edges: OCR boxes vary by a pixel or two, and the frame sat
+    # 2 px below the box (2026-11-08), so a box test missed it on every few reads.
+    centre = (min(b[1] for b in row) + max(b[3] for b in row)) / 2
+    # Only one bait is selected at a time, so a neighbour's frame shows on one side only.
+    return bool((edges < centre).any() and (edges > centre).any())
