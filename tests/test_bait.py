@@ -421,7 +421,9 @@ class SpotTests(unittest.TestCase):
         # Gold frame above and below = selected (the user's screenshots).
         for name, want in (("panel3_legendary", True), ("panel3_rare", False), ("panel3_common", False),
                            ("bait_two_rows_common_x299", True), ("bait_two_rows_rare_x30", False),
-                           ("bait_x296", True)):
+                           ("bait_x296", True),
+                           # 2026-11-08: a 1 px taller text box hid the bottom edge from the old check.
+                           ("bait_selected_tall_box", True), ("bait_rare_under_selected", False)):
             with self.subTest(name=name):
                 self.assertIs(screen_text.row_selected(image(name)), want)
         self.assertIsNone(screen_text.row_selected(image("item_none")[:80, :560]))
